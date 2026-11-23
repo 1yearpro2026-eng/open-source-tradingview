@@ -438,8 +438,8 @@ async def handler(ws):
             if tf not in TF_SEC:
                 await ws.send(json.dumps({"type": "error", "msg": f"Unknown timeframe {tf}"}))
                 continue
-            if ofs.local_mode():
-                await ws.send(json.dumps({"type": "status", "msg": "Local data mode: no live feed"}))
+            if ofs.local_mode() or src == "local":
+                await ws.send(json.dumps({"type": "status", "msg": "Local data: no live feed"}))
                 continue
             fn = {"deriv": stream_deriv, "bybit": stream_bybit}.get(src, stream_binance)
             task = feedlog.start_stream(fn, ws, src if fn is not stream_binance else "binance", sym, tf)
@@ -460,14 +460,28 @@ def binance_history(symbol, tf, limit=HISTORY, to_ms=None):
              "close": float(k[4]), "volume": float(k[5])} for k in rows]
 
 
+def local_history(symbol, tf, limit=HISTORY, to_ms=None):
+    """Imported files (source "local"): only the local store has them."""
+    return ofs.load("local", symbol, tf, to_ms, int(limit))
+
+def local_symbols():
+    """Markets that exist only as imported files, listed next to the feeds. Tickers are LOC_<symbol>."""
+    out = []
+    for t in ofs.local_tickers():
+        base = t[4:]
+        metal = base[:3] in ("XAU", "XAG", "XPT", "XPD")
+        out.append({"ticker": t, "name": f"{base} (imported)", "source": "local", "group": "commodity" if metal else "forex",
+                    "digits": 3 if base.endswith("JPY") else (2 if metal else 5)})
+    return out
+
 def hist_for(src):
-    return {"deriv": deriv_history, "bybit": bybit_history}.get(src, binance_history)
+    return {"deriv": deriv_history, "bybit": bybit_history, "local": local_history}.get(src, binance_history)
 
 def bars_for(src, sym, tf, limit, to):
     """Chart candles. Local mode: only the local store. Live mode: the feed (older bars come from the store when it has
     them, so charts open fast); with no internet the store answers instead."""
     limit = int(limit)
-    if ofs.local_mode():
+    if ofs.local_mode() or src == "local":
         return ofs.load(src, sym, tf, to, limit)
     try:
         hist = hist_for(src)
@@ -493,6 +507,8 @@ CRYPTO = [("BTCUSD", "Bitcoin"), ("ETHUSD", "Ethereum"), ("SOLUSD", "Solana"), (
 # One instrument = the same underlying market at several brokers. Only exact matches are joined:
 # gold tokens (PAXG, XAUT) are NOT gold spot, so they stay separate instruments.
 BROKERS = [("deriv", "Deriv"), ("bybit", "Bybit"), ("binance", "Binance")]
+def brokers_now():
+    return BROKERS + ([("local", "Imported")] if ofs.local_tickers() else [])
 DERIV_INDEX = {"OTC_NDX": "USTEC", "OTC_DJI": "US30", "OTC_SPC": "US500", "OTC_FTSE": "UK100", "OTC_GDAXI": "DE30",
                "OTC_FCHI": "FR40", "OTC_N225": "JP225", "OTC_HSI": "HK50", "OTC_AS51": "AUS200", "OTC_SX5E": "STOXX50"}
 def variant_rank(label):
@@ -507,6 +523,8 @@ _instr_cache = {"n": -1, "data": None}
 def instrument_key(s):
     """(key, variant label) for a symbol, or (None, None) when it has no cross-broker meaning."""
     t, src = s["ticker"], s["source"]
+    if src == "local":
+        return t[4:], None
     if src == "deriv":
         if t in DERIV_INDEX: return DERIV_INDEX[t], None
         if t[:3] in ("frx", "cry"): return t[3:], None
@@ -534,7 +552,7 @@ def instrument_key(s):
     return None, None
 
 def build_instruments():
-    syms = deriv_symbols_cache + bybit_symbols_cache + \
+    syms = local_symbols() + deriv_symbols_cache + bybit_symbols_cache + \
         [{"ticker": t, "name": n, "source": "binance", "group": "crypto"} for t, n in CRYPTO]
     if _instr_cache["n"] == len(syms):
         return _instr_cache["data"]
@@ -556,7 +574,7 @@ def build_instruments():
         out.append(i)
     rank = {"metal": 0, "crypto": 1, "forex": 2, "index": 3, "energy": 4, "stock": 6}
     out.sort(key=lambda i: (-len(i["brokers"]), rank.get(i["group"], 5), i["key"]))
-    data = {"brokers": [{"id": b, "name": n} for b, n in BROKERS], "instruments": out}
+    data = {"brokers": [{"id": b, "name": n} for b, n in brokers_now()], "instruments": out}
     _instr_cache.update(n=len(syms), data=data)
     return data
 
@@ -569,6 +587,8 @@ def feed_status():
     data = {"deriv": {"ok": bool(deriv_symbols_cache), "msg": f"{len(deriv_symbols_cache)} symbols"},
             "bybit": {"ok": bool(bybit_symbols_cache), "msg": f"{len(bybit_symbols_cache)} charts"},
             "binance": {"ok": True, "msg": "public feed"}}
+    if ofs.local_tickers():
+        data["local"] = {"ok": True, "msg": f"{len(ofs.local_tickers())} imported symbols (no live feed)"}
     for k, v in data.items():  # one log line per change of a status light
         logbus.state("feed." + k, "ok", v["ok"], "info" if v["ok"] else "warn", ("up: " if v["ok"] else "DOWN: ") + v["msg"])
         logbus.problem("feed." + k, None if v["ok"] else v["msg"])
@@ -597,7 +617,7 @@ class LabHandler(SimpleHTTPRequestHandler):
         from urllib.parse import urlparse, parse_qs
         if self.path.startswith("/api/symbols"):
             crypto = [{"ticker": t, "name": n, "source": "binance", "group": "crypto"} for t, n in CRYPTO]
-            return self._json({"symbols": bybit_symbols_cache + deriv_symbols_cache + crypto,
+            return self._json({"symbols": local_symbols() + bybit_symbols_cache + deriv_symbols_cache + crypto,
                                "deriv": len(deriv_symbols_cache), "bybit": len(bybit_symbols_cache), "ws_port": WS_PORT}, 200)
         if self.path.startswith("/api/logs"):
             q = {k: v[0] for k, v in parse_qs(urlparse(self.path).query).items()}
@@ -605,7 +625,8 @@ class LabHandler(SimpleHTTPRequestHandler):
             return self._json({**logbus.snapshot(int(since) if since.isdigit() else 0, brief="brief" in q), "journal_raw": False}, 200)
         if self.path.startswith("/api/offline/status"):
             return self._json({"local": ofs.local_mode(), "job": {k: v for k, v in ofs.job.items() if k != "cancel"},
-                               "assets": ofs.assets(), "profiles": list(ofs.PROFILES)}, 200)
+                               "assets": ofs.assets(), "profiles": list(ofs.PROFILES),
+                               "imp": {k: v for k, v in ofs.imp.items() if k != "cancel"}}, 200)
         if self.path.startswith("/api/status"):
             return self._json(feed_status(), 200)
         if self.path.startswith("/api/instruments"):
@@ -687,6 +708,28 @@ class LabHandler(SimpleHTTPRequestHandler):
         origin = self.headers.get("Origin", "")
         if origin and origin not in (f"http://localhost:{HTTP_PORT}", f"http://127.0.0.1:{HTTP_PORT}"):
             return self._json({"error": "forbidden origin"}, 403)
+        if self.path.startswith("/api/offline/upload"):
+            # A file picked in the browser: saved to a temporary folder, imported, then deleted (no path typing needed).
+            import re as _re
+            from urllib.parse import urlparse, parse_qs, unquote
+            q = parse_qs(urlparse(self.path).query)
+            name = os.path.basename(unquote((q.get("name") or [""])[0]))
+            sess = _re.sub(r"[^A-Za-z0-9_-]", "", (q.get("s") or ["x"])[0])[:40] or "x"
+            size = int(self.headers.get("Content-Length") or 0)
+            if not name.lower().endswith((".csv", ".txt", ".zip")):
+                return self._json({"error": "only .csv, .txt and .zip files"}, 400)
+            if size > 600 * 1024 * 1024:
+                return self._json({"error": "file too large"}, 413)
+            dest = os.path.join(ofs.UPLOADS, sess)
+            os.makedirs(dest, exist_ok=True)
+            left = size
+            with open(os.path.join(dest, name), "wb") as f:
+                while left > 0:
+                    chunk = self.rfile.read(min(1 << 20, left))
+                    if not chunk:
+                        break
+                    f.write(chunk); left -= len(chunk)
+            return self._json({"ok": True, "dir": dest}, 200)
         if "application/json" not in self.headers.get("Content-Type", ""):
             return self._json({"error": "JSON only"}, 415)
         n = int(self.headers.get("Content-Length") or 0)
@@ -709,7 +752,11 @@ class LabHandler(SimpleHTTPRequestHandler):
                 return self._json({"error": "source and ticker needed"}, 400)
             ok = ofs.start_download(hist_for, src, tk, body.get("profile") or "standard")
             return self._json({"queued": ok}, 200)
+        if self.path.startswith("/api/offline/import"):
+            ok, why = ofs.start_import(body.get("path"), body.get("symbol"), body.get("shift", "auto"))
+            return self._json({"started": ok, "error": why}, 200 if ok else 400)
         if self.path.startswith("/api/offline/cancel"):
+            ofs.imp["cancel"] = True
             ofs.cancel()
             return self._json({"ok": True}, 200)
         if self.path.startswith("/api/offline/delete"):

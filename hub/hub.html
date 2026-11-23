@@ -16,6 +16,7 @@
   .seg button.on { color:var(--accent); background:var(--raised) }
   #tfs button.on { color:var(--accentInk); background:var(--accent) }
   .seg button:disabled { color:var(--faint); cursor:not-allowed }
+  .seg button.na { color:var(--faint) }
   .dot { display:inline-block; width:6px; height:6px; border-radius:50%; margin-right:6px; vertical-align:1px; background:var(--faint) }
   .dot.ok { background:var(--ok) } .dot.bad { background:var(--bad) }
   select { background:var(--bg); color:var(--text); border:1px solid var(--line); border-radius:3px; padding:4px 6px; font:inherit }
@@ -156,7 +157,7 @@
 // Madar Chart: one shell over every broker and every chart engine.
 // Broker switch keeps the instrument (gold stays gold); engine switch keeps instrument, broker and timeframe.
 const TFS = [["M1", "1m"], ["M5", "5m"], ["M15", "15m"], ["M30", "30m"], ["H1", "1H"], ["H4", "4H"], ["D1", "D"]];
-const SHORT = { bybit: "BYB", deriv: "DER", binance: "BIN" };
+const SHORT = { bybit: "BYB", deriv: "DER", binance: "BIN", local: "LOC" };
 const $ = (id) => document.getElementById(id);
 let DATA = { brokers: [], instruments: [] }, BY_TICKER = new Map(), status = {};
 let st = { engine: "vela", key: "XAUUSD", broker: "deriv", ticker: "frxXAUUSD", tf: "M1" };
@@ -216,7 +217,11 @@ function chooseInstrument(k) {
   push();
 }
 function chooseBroker(b) {
-  const i = inst(st.key); if (!i || !i.brokers[b]) return;
+  let i = inst(st.key);
+  if (!i || !i.brokers[b]) {      // this feed does not carry the current instrument: open the first instrument it does carry
+    const alt = DATA.instruments.find((x) => x.brokers[b]); if (!alt) return;
+    i = alt; st.key = alt.key;
+  }
   Object.assign(st, { broker: b, ticker: i.brokers[b][0].ticker });
   push();
 }
@@ -227,8 +232,9 @@ function paint() {
   $("tfs").querySelectorAll("button").forEach((b) => b.classList.toggle("on", b.dataset.id === st.tf));
   $("brokers").querySelectorAll("button").forEach((b) => {
     const has = !!(i && i.brokers[b.dataset.id]), s = status[b.dataset.id];
-    b.disabled = !has; b.classList.toggle("on", b.dataset.id === st.broker);
-    b.title = (has ? "" : "Not offered by this broker. ") + (s ? s.msg : "");
+    const any = DATA.instruments.some((x) => x.brokers[b.dataset.id]);
+    b.disabled = !has && !any; b.classList.toggle("na", !has && any); b.classList.toggle("on", b.dataset.id === st.broker);
+    b.title = (has ? "" : any ? "Not offered for this instrument: click to open the first instrument this feed has. " : "Not offered by this broker. ") + (s ? s.msg : "");
     b.querySelector(".dot").className = "dot" + (s ? (s.ok ? " ok" : " bad") : "");
   });
   const opts = (i && i.brokers[st.broker]) || [];
@@ -347,6 +353,44 @@ function renderOffline() {
     r.querySelector("button").onclick = async () => { await offPost("cancel"); await offPoll(); };
   } else if (j.error) add(`<span style="color:var(--bad,#e55)">${j.error}</span>`);
   else if (j.finished && j.done.length) add(`<span>Last download finished: ${j.done.map((t) => TF_LABEL[t]).join(" ")}</span>`);
+  // Import downloaded files (HistData ASCII / MetaTrader CSV, or zips of them): 1-minute candles in, every timeframe out.
+  const ih = document.createElement("h3"); ih.textContent = "Import files"; d.appendChild(ih);
+  const keepImp = { path: ($("impPath") || {}).value || "", sym: ($("impSym") || {}).value || "", tz: ($("impTz") || {}).value || "auto" };
+  const ir = add(`<input id="impPath" placeholder="Folder or file path (.csv / .zip)" style="width:100%" value="${keepImp.path.replace(/"/g, "&quot;")}">`);
+  const ir2 = add(`<input id="impSym" placeholder="Symbol (blank = from file name)" style="flex:1;min-width:0" value="${keepImp.sym.replace(/"/g, "&quot;")}"><select id="impTz" style="flex:1;min-width:0"><option value="auto">Auto: match the weekly market open (forex)</option><option value="5">Fixed: HistData EST (UTC-5)</option><option value="0">Already UTC</option><option value="-2">Broker time UTC+2</option><option value="-3">Broker time UTC+3</option></select>`);
+  $("impTz").value = keepImp.tz;
+  [ir.firstChild, ...ir2.querySelectorAll("input,select")].forEach((x) => { x.style.cssText += ";background:var(--bg);color:var(--text);border:1px solid var(--line);border-radius:4px;padding:5px 6px;font:inherit;font-size:12px"; });
+  const pick = add(`<button id="impFiles">Choose files...</button><button id="impDir">Choose folder...</button><input id="impFile" type="file" multiple accept=".csv,.txt,.zip" hidden><input id="impFolder" type="file" webkitdirectory multiple hidden><span style="width:100%">Pick the files you downloaded (CSV or zip), or type a path below.</span>`);
+  pick.querySelectorAll("button").forEach((b) => { b.style.cssText = "padding:4px 10px;border:1px solid var(--accent);background:var(--bg);color:var(--accent);border-radius:4px;cursor:pointer"; });
+  const sendFiles = async (files) => {
+    files = [...files].filter((f) => /\.(csv|txt|zip)$/i.test(f.name)); const msg = $("impMsg");
+    if (!files.length) { msg.textContent = "No .csv / .txt / .zip files in that selection."; return; }
+    const sess = "u" + Date.now(); let dir = "";
+    for (let i = 0; i < files.length; i++) {
+      msg.textContent = `Uploading ${i + 1}/${files.length}: ${files[i].name} ...`;
+      try { const r = await (await fetch(`/api/offline/upload?s=${sess}&name=${encodeURIComponent(files[i].name)}`, { method: "POST", headers: { "Content-Type": "application/octet-stream" }, body: files[i] })).json(); if (!r.ok) throw new Error(r.error || "upload failed"); dir = r.dir; }
+      catch (e) { msg.textContent = "Upload failed: " + e.message; return; }
+    }
+    msg.textContent = "Importing ...";
+    const r = await offPost("import", { path: dir, symbol: $("impSym").value, shift: $("impTz").value === "auto" ? "auto" : Number($("impTz").value) });
+    msg.textContent = r.started ? "Importing ..." : (r.error || "could not start"); offPoll();
+  };
+  $("impFile").onchange = (e) => sendFiles(e.target.files);
+  $("impFolder").onchange = (e) => sendFiles(e.target.files);
+  pick.querySelector("#impFiles").onclick = () => $("impFile").click();
+  pick.querySelector("#impDir").onclick = () => $("impFolder").click();
+  const ib = add(`<button id="impGo">Import path</button><span style="flex:1">Candles become 1m, 5m, 15m, 30m, 1H, 4H and D (days start 00:00 UTC). Shown as the "Imported" feed.</span>`);
+  add(`<span id="impMsg" style="width:100%;color:var(--accent)">${(window.__impMsg || "")}</span>`);
+  const ig = ib.querySelector("button"); ig.style.cssText = "padding:4px 10px;border:1px solid var(--accent);background:var(--bg);color:var(--accent);border-radius:4px;cursor:pointer";
+  ig.onclick = async () => {
+    const r = await offPost("import", { path: $("impPath").value, symbol: $("impSym").value, shift: $("impTz").value === "auto" ? "auto" : Number($("impTz").value) });
+    $("impMsg").textContent = r.started ? "Importing ..." : (r.error || "could not start"); if (!r.started) $("impMsg").style.color = "var(--bad,#e55)"; else offPoll();
+  };
+  const im = o.imp || {};
+  if (im.running) add(`<b>Importing</b><span>${im.symbol || ""} - ${im.done}/${im.total} files - ${im.bars.toLocaleString()} candles ${im.file ? "- " + im.file : ""}</span>`);
+  else if (im.error) add(`<span style="color:var(--bad,#e55)">Import: ${im.error}</span>`);
+  else if (im.finished && im.skipped && im.skipped.length && !(im.tfs && im.tfs.M1)) add(`<span style="color:var(--bad,#e55)">Skipped: ${im.skipped.slice(0, 4).join("; ")}</span>`);
+  else if (im.finished && im.tfs && im.tfs.M1) { const r = add(`<span style="flex:1">Imported ${im.symbol}: ${Object.entries(im.tfs).map(([t, n]) => TF_LABEL[t] + " " + n.toLocaleString()).join(", ")}<br>${im.note || ""}${im.skipped && im.skipped.length ? "<br>Skipped (not candle files): " + im.skipped.slice(0, 3).join("; ") : ""}</span><button>Reload page</button>`); r.querySelector("button").onclick = () => location.reload(); }
   const hdr = document.createElement("h3"); hdr.textContent = "Downloaded"; d.appendChild(hdr);
   if (!o.assets.length) add("<span>Nothing downloaded yet.</span>");
   o.assets.forEach((a) => {
