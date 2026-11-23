@@ -137,7 +137,7 @@
   <select id="variant" title="Market type at this broker" hidden></select>
   <span id="ticker"></span><span class="sep"></span>
   <div class="seg" id="tfs"></div><span class="sep"></span>
-  <select id="layout" title="Chart layout (Vela)"><option value="">1 chart</option><option value="2h">2 side by side</option><option value="2v">2 stacked</option><option value="4">4 charts</option><option value="8">8 charts</option></select>
+  <select id="layout" title="Chart layout (Vela)"><option value="">1 chart</option><option value="2h">2 side by side</option><option value="3h">3 side by side</option><option value="2v">2 stacked</option><option value="4">4 charts</option></select>
   <span class="sep"></span>
 </div>
 <div id="stage"><iframe id="frame" title="chart"></iframe><div id="cover" hidden><div id="coverText"></div></div></div>
@@ -372,6 +372,7 @@ function renderSettings() {
   const sec = (title) => { const x = document.createElement("div"); x.className = "set"; x.innerHTML = `<h4>${title}</h4>`; d.appendChild(x); return x; };
   const pre = sec("Theme"), row = document.createElement("div"); row.className = "presets"; pre.appendChild(row);
   Object.entries(HubPresets).forEach(([k, p]) => { const b = document.createElement("button"); b.textContent = p.label;
+    const sw = (c) => { const i = document.createElement("i"); i.style.cssText = `display:inline-block;width:9px;height:9px;border-radius:50%;margin-left:5px;vertical-align:middle;background:${c};border:1px solid ${p.line}`; b.append(i); }; sw(p.up); sw(p.down);
     b.style.cssText = `background:${p.bg};color:${p.text};border-color:${p.line}`; b.className = s.preset === k ? "on" : "";
     b.onclick = () => { HubSettingsSave({ ...s, preset: k, overrides: {} }); themeChanged(); }; row.appendChild(b); });
   const fs = sec("Font"), sel = document.createElement("select"); fs.appendChild(sel);

@@ -12,7 +12,7 @@
   .vela-ui-layer > * { pointer-events: auto; }
 </style></head><body>
 <div id="top"><b>Madar Chart</b> <span style="color:#93a2af">Vela engine</span>
-  <select id="layout"><option value="">1 chart</option><option value="2h">2 side by side</option><option value="2v">2 stacked</option><option value="4">4 charts</option><option value="8">8 charts</option></select>
+  <select id="layout"><option value="">1 chart</option><option value="2h">2 side by side</option><option value="3h">3 side by side</option><option value="2v">2 stacked</option><option value="4">4 charts</option></select>
   <span style="color:#93a2af">Tips: type a letter for symbol search, a digit for timeframe, ? for all shortcuts. Drag pane borders to resize.</span>
   <button id="auto">Code trendline</button></div>
 <div id="chart"></div>
@@ -27,6 +27,7 @@
 <script src="orderflow_tpo_type.js"></script>
 <script src="drawing_favbar.js"></script>
 <script src="orderflow_autofit.js"></script>
+<script src="replay_motion.js"></script>
 <script src="replay_bar.js"></script>
 <script>
 let lastBars = [];
@@ -133,13 +134,18 @@ function applyTheme() {
   (ws.cells ? ws.cells() : [ws.active]).forEach((c) => c && c.chart && colorChart(c.chart));
 }
 const VELA_TF = { M1: "1", M5: "5", M15: "15", M30: "30", H1: "60", H4: "240", D1: "1D" };
+// Layouts the Vela picker does not know: passed to Vela as a definition (max 4 charts in total).
+const LAYOUT_DEFS = { "3h": { id: "3h", label: "3 side by side", cols: [1, 1, 1], rows: [1], cells: [{ id: "c1" }, { id: "c2" }, { id: "c3" }] } };
+const layoutArg = (v) => LAYOUT_DEFS[v] || v || "1";
+// The crosshair follows the mouse on every chart of the layout at once (all layouts).
+function syncCrosshair() { try { ws.applySyncSetting("crosshair", true); } catch (e) { console.warn("crosshair sync", e); } }
 function build(layout) {
   const host = document.getElementById("chart");
   if (ws && ws.destroy) ws.destroy();
   host.innerHTML = "";
   ws = new VelaLab.VelaWorkspace(host, {
     // "1" (not false) so the layout can change in place later; top-level symbol/timeframe are every cell's default.
-    layout: layout || "1", symbol: "lab:" + LabDefaultSymbol, timeframe: VELA_TF[LabDefaultTF], live: true,
+    layout: layoutArg(layout), symbol: "lab:" + LabDefaultSymbol, timeframe: VELA_TF[LabDefaultTF], live: true,
     // History depth. Vela's default is 500 candles and it does NOT load more when you scroll left, so 1m-15m charts
     // only reached back a few days. More: chart settings > Advanced > Bars to fetch, or the 3M/6M/1Y buttons (2026-11-13).
     bars: 10000,
@@ -152,6 +158,7 @@ function build(layout) {
   });
   // Floating favourites bar for starred drawing tools (drawing_favbar.js).
   try { MadarFavBar.mount(ws, host); } catch (e) { console.warn("favourites bar", e); }
+  syncCrosshair();
   // Bar Replay controls (replay_bar.js).
   try { MadarReplayBar.mount(ws, host); } catch (e) { console.warn("replay bar", e); }
   try { MadarAutoFit.mount(ws); } catch (e) { console.warn("order-flow auto fit", e); }
@@ -190,7 +197,7 @@ window.labChart = {
   name: "vela",
   // Switch in place: indicators re-run on the new bars; panes, drawings and settings stay.
   // Layout in place (cells keep their state); new cells get the theme colours.
-  setLayout: (layout) => { document.getElementById("layout").value = layout || ""; if (ws.setLayout) { ws.setLayout(layout || "1"); setTimeout(applyTheme, 1500); } else build(layout || ""); },
+  setLayout: (layout) => { document.getElementById("layout").value = layout || ""; if (ws.setLayout) { ws.setLayout(layoutArg(layout)); setTimeout(() => { applyTheme(); syncCrosshair(); }, 1500); syncCrosshair(); } else build(layout || ""); },
   applyTheme,
   // Add a Pine Script indicator to the active chart. Resolves {ok, id, error}.
   removePine: (id) => {

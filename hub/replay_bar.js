@@ -42,7 +42,11 @@
   const speedLabel = (ms) => { const r = 1000 / ms; return (r >= 10 ? Math.round(r) : Math.round(r * 10) / 10) + " bar/s"; };
   const savedSpeed = (() => { try { const v = Number(localStorage.getItem("madarReplaySpeed")); return v >= MIN_MS && v <= MAX_MS ? v : 1000; } catch (_) { return 1000; } })();
 
-  let ws = null, bar = null, timer = null, speed = savedSpeed;
+  // Moves inside each candle (replay_motion.js): 0 = off (the candle appears whole), else 8 ... 240 moves per candle.
+  const savedMoves = (() => { try { const v = Number(localStorage.getItem("madarReplayMoves")); return v === 0 || (window.MadarReplayMotion && MadarReplayMotion.MOVES.includes(v)) ? v : 0; } catch (_) { return 0; } })();
+  let ws = null, bar = null, timer = null, speed = savedSpeed, moves = savedMoves, motionKey = null, motionUsed = "", wasActive = false;
+  // Speed stays "candles per second": with moves on, each move waits speed / moves.
+  const playMs = () => (moves ? Math.max(1, Math.round(speed / moves)) : speed);
   const chart = () => { try { return (ws.active || ws).chart; } catch (_) { return null; } };
   const el = (tag, props, kids) => { const e = Object.assign(document.createElement(tag), props || {}); (kids || []).forEach((k) => e.append(k)); return e; };
   const pad = (n) => String(n).padStart(2, "0");
@@ -59,6 +63,10 @@
     ui.start = el("button", { textContent: "Start", title: "Start replay from the chosen point" });
     ui.back = el("button", { textContent: "⏮ Back", title: "Go back one bar" });
     ui.step = el("button", { textContent: "⏭ Step", title: "Next bar (Shift+→)" });
+    ui.move = el("button", { textContent: "▸ Move", title: "One move inside the candle", hidden: true });
+    ui.motion = el("select", { title: "Moves inside each candle: the candle forms live instead of appearing whole" }, [el("option", { textContent: "Motion: off", value: "0" }),
+      ...(window.MadarReplayMotion ? MadarReplayMotion.MOVES : []).map((n) => el("option", { textContent: n + " moves/candle", value: String(n) }))]);
+    ui.motion.value = String(moves);
     ui.play = el("button", { textContent: "▶ Play", title: "Play / pause (Shift+Space)" });
     ui.slider = el("input", { type: "range", min: 0, max: 100, step: 1, value: msToPos(speed), title: "Replay speed (log scale)" });
     ui.slider.style.cssText = "width:110px;padding:0;accent-color:var(--accent,#e3a33a);cursor:pointer";
@@ -78,7 +86,7 @@
     ui.bmMsg = el("div", { className: "mc-bm-msg" });
     ui.panel.append(el("div", { className: "mc-bm-head" }, [ui.bmName, ui.bmSave]), ui.bmList, ui.bmMsg);
     ui.setup = [ui.preset, ui.date, ui.start];
-    ui.run = [ui.back, ui.step, ui.play, ui.speed, ui.stop, ui.info];
+    ui.run = [ui.back, ui.step, ui.move, ui.play, ui.motion, ui.speed, ui.stop, ui.info];
     const sep = () => el("span", { className: "mc-rp-sep" });
     bar = el("div", { className: "mc-rp" }, [ui.toggle, sep(), ui.cut, ...ui.setup, ...ui.run, ui.bm, ui.panel]);
     bar.querySelector(".mc-rp-sep").hidden = true;
@@ -141,7 +149,7 @@
       // Re-cut: leave the running replay first, then start again from the new bar (keeps playing if it was playing).
       Promise.resolve(was.active ? (c.replay.pause(), c.replay.stop()) : null)
         .then(() => c.replay.start({ from: t }))
-        .then(() => { open = true; if (resume) c.replay.play(speed); setTimeout(refresh, 50); })
+        .then(() => { open = true; if (resume) c.replay.play(playMs()); setTimeout(refresh, 50); })
         .catch((e) => console.warn("replay start", e));
     };
     cutKey = (e) => {
@@ -165,7 +173,7 @@
     if (!isFinite(prev)) return;
     const resume = c.replay.state.playing;
     c.replay.pause();
-    Promise.resolve(c.replay.stop()).then(() => c.replay.start({ from: prev })).then(() => { if (resume) c.replay.play(speed); setTimeout(refresh, 50); }).catch((e) => console.warn("replay back", e));
+    Promise.resolve(c.replay.stop()).then(() => c.replay.start({ from: prev })).then(() => { if (resume) c.replay.play(playMs()); setTimeout(refresh, 50); }).catch((e) => console.warn("replay back", e));
   }
 
   function startReplay() {
@@ -182,7 +190,7 @@
     const c = chart(); if (!c) return;
     const s = c.replay.state;
     if (!s.active) return;
-    if (s.playing) c.replay.pause(); else c.replay.play(speed);
+    if (s.playing) c.replay.pause(); else c.replay.play(playMs());
     refresh();
   }
   function step() { const c = chart(); if (c && c.replay.state.active) { c.replay.pause(); c.replay.step(); refresh(); } }
@@ -203,7 +211,7 @@
     if (!s || !s.active || !s.cursorTime || !m) return null;
     let drawings = null; try { drawings = c.drawings.toJSON(); } catch (_) {}
     return { id: auto ? "auto" : String(Date.now()) + Math.random().toString(36).slice(2, 5), auto: !!auto, name, symbol: m.symbol, tf: m.tf,
-      time: s.cursorTime, drawings, speed, created: Date.now() };
+      time: s.cursorTime, drawings, speed, moves, created: Date.now() };
   }
   function autoSave() {
     if (jumping || Date.now() - lastAuto < 2000) return;
@@ -239,6 +247,7 @@
       await c.replay.start({ from: b.time });
       if (b.drawings) { try { c.drawings.fromJSON(b.drawings); } catch (e) { console.warn("restore drawings", e); } }
       if (b.speed) bar.ui.slider.oninput && (bar.ui.slider.value = msToPos(b.speed), bar.ui.slider.oninput());
+      if (b.moves !== undefined && String(b.moves) !== bar.ui.motion.value) { bar.ui.motion.value = String(b.moves); bar.ui.motion.onchange(); }
       open = true; bmSay("Back at " + fmtUtc(b.time) + " (paused)."); refresh();
     } catch (e) { bmSay("Could not jump: " + (e && e.message || e)); }
     jumping = false; lastAuto = Date.now();
@@ -270,6 +279,17 @@
     }
   }
 
+  // Give the replay its tick source (or remove it). Runs again whenever a new replay starts or the setting changes.
+  function applyMotion() {
+    const c = chart(); if (!c || !window.MadarReplayMotion) return;
+    const key = String(moves);
+    if (motionKey === key) return;
+    motionKey = key;
+    try {
+      c.replay.setTicks(moves ? MadarReplayMotion.makeSource({ market: () => { const m = marketNow(); return m ? { symbol: m.symbol, tfCode: TF_CODE[m.tf] } : null; }, moves: () => moves, onSource: (t) => { motionUsed = t; } }) : null);
+    } catch (e) { console.warn("replay motion", e); }
+  }
+
   let open = false;
   function refresh() {
     if (!bar) return;
@@ -283,7 +303,11 @@
     u.sep.hidden = u.cut.hidden = u.bm.hidden = !(open || active);
     if (!(open || active)) u.panel.hidden = true;
     u.bmSave.disabled = !active;
-    if (active) autoSave();
+    if (active && !wasActive) motionKey = null;      // a new replay: hand it the tick source again
+    wasActive = active;
+    if (active) { applyMotion(); autoSave(); }
+    u.move.hidden = !active || !moves;
+    u.motion.title = "Moves inside each candle: the candle forms live instead of appearing whole" + (moves && motionUsed ? ` (last candle: ${motionUsed} data)` : "");
     u.cut.textContent = active ? "✂ Re-cut" : "✂ Select bar";
     u.chips.forEach((b) => b.classList.toggle("on", Math.abs(Number(b.dataset.ms) - speed) <= 2));
     if (active) {
@@ -312,6 +336,8 @@
     document.addEventListener("mousedown", (e) => { if (!u.panel.hidden && !bar.contains(e.target)) u.panel.hidden = true; });
     u.start.onclick = startReplay;
     u.step.onclick = step;
+    u.move.onclick = () => { const c = chart(); if (c && c.replay.state.active) { c.replay.pause(); applyMotion(); c.replay.stepUpdate(); refresh(); } };
+    u.motion.onchange = () => { moves = Number(u.motion.value); try { localStorage.setItem("madarReplayMoves", String(moves)); } catch (_) {} motionKey = null; applyMotion(); const c = chart(); if (c && c.replay.state.playing) c.replay.play(playMs()); refresh(); };
     u.back.onclick = stepBack;
     u.play.onclick = togglePlay;
     u.stop.onclick = () => { stopReplay(); open = false; refresh(); };
@@ -320,7 +346,7 @@
       speed = Math.max(MIN_MS, Math.min(MAX_MS, ms));
       u.slider.value = msToPos(speed); u.slabel.textContent = speedLabel(speed);
       try { localStorage.setItem("madarReplaySpeed", String(speed)); } catch (_) {}
-      const c = chart(); if (c && c.replay.state.playing) c.replay.play(speed);
+      const c = chart(); if (c && c.replay.state.playing) c.replay.play(playMs());
     };
     u.slider.oninput = () => setSpeed(posToMs(Number(u.slider.value)));
     u.chips.forEach((b) => { b.onclick = () => setSpeed(Number(b.dataset.ms)); });
