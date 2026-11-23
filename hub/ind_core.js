@@ -1,4 +1,4 @@
-// TradeX indicators, part 1: state, chart messaging, add/remove, re-apply on engine load.
+// Madar Chart indicators, part 1: state, chart messaging, add/remove, re-apply on engine load.
 // Loaded by hub.html before its inline script; uses hub globals ($, st, openPanel) only at call time.
 let INDS = []; try { INDS = JSON.parse(localStorage.getItem("chartHubIndicators") || "[]"); } catch (_) {}   // on the chart (any origin)
 let FAVS = []; try { FAVS = JSON.parse(localStorage.getItem("chartHubFavs") || "[]"); } catch (_) {}         // starred rows

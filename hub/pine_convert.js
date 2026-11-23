@@ -1,7 +1,7 @@
-// Pine Script v1-v4 -> v5 converter (TradeX). Runs in the browser (window.PineConvert) and in node (require).
+// Pine Script v1-v4 -> v5 converter (Madar Chart). Runs in the browser (window.PineConvert) and in node (require).
 // Rules follow TradingView's official migration guides ("To Pine Script version 4" and "To version 5").
 // Approach: mask strings and comments, rewrite the code text, unmask. Returns {source, from, changed, warnings}.
-// A converted script is NOT proven correct until its values are checked against TradingView (TradeX step 3).
+// A converted script is NOT proven correct until its values are checked against TradingView (Madar Chart step 3).
 (function (root) {
   "use strict";
 

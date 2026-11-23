@@ -1,4 +1,4 @@
-"""TradeX live data server.
+"""Madar Chart live data server.
 
 Serves the test pages on http://localhost:8770 and streams candles over
 ws://localhost:8765. Every chart connects to the same stream, so a chart
@@ -8,13 +8,10 @@ Sources:
   deriv    public Deriv websocket: forex, gold, indices, crypto (no login)
   bybit    public Bybit market data (no login)
   binance  public crypto feed, no login (XAUUSD -> PAXGUSDT gold token, BTCUSD -> BTCUSDT)
-  mt5      optional: a MetaTrader 5 terminal on this Windows PC (LOCAL_MT5=1 in .env)
-  arm      optional: "Remote MT5", a MetaTrader 5 terminal on another machine through bridge/mt5_bridge.py
-           and an SSH tunnel (REMOTE_MT5_SSH_HOST in .env), tickers RMT_<name>
 
 All settings live in .env (see .env.example). Nothing private is needed for the public feeds.
 
-Client -> server: {"source": "mt5"|"binance"|"deriv"|"arm"|"bybit", "symbol": "XAUUSD", "tf": "M1"}
+Client -> server: {"source": "binance"|"deriv"|"bybit", "symbol": "XAUUSD", "tf": "M1"}
 Server -> client: {"type": "history", "bars": [...]}, then {"type": "bar", "bar": {...}, "sent": epoch_ms}
                   {"type": "error", "msg": "..."}
 """
@@ -36,15 +33,10 @@ def load_env(path):
 
 load_env(os.path.join(HERE, "..", ".env"))
 load_env(os.path.join(HERE, ".env"))
-import logbus, feedlog
+import logbus, feedlog, offline_store as ofs
 
 HTTP_PORT = int(os.environ.get("HUB_HTTP_PORT", "8770"))
 WS_PORT = int(os.environ.get("HUB_WS_PORT", "8765"))
-LOCAL_MT5 = os.environ.get("LOCAL_MT5", "0") == "1"
-MT5_TERMINAL_PATH = os.environ.get("MT5_TERMINAL_PATH", r"C:\Program Files\MetaTrader 5\terminal64.exe")
-REMOTE_SSH_HOST = os.environ.get("REMOTE_MT5_SSH_HOST", "").strip()   # an alias from your ~/.ssh/config; empty = off
-REMOTE_RESTART_CMD = os.environ.get("REMOTE_MT5_RESTART_CMD", "").strip()  # optional command run over SSH by the Restart button
-REMOTE_ON = bool(REMOTE_SSH_HOST)
 CACHE_DIR = os.path.join(HERE, ".cache")
 TF_SEC = {"M1": 60, "M5": 300, "M15": 900, "M30": 1800, "H1": 3600, "H4": 14400, "D1": 86400}
 BINANCE_TF = {"M1": "1m", "M5": "5m", "M15": "15m", "M30": "30m", "H1": "1h", "H4": "4h", "D1": "1d"}
@@ -57,273 +49,22 @@ def bsym_of(symbol):
     return s + "T" if s.endswith("USD") else s
 HISTORY = 1000
 
-# ---------------- MT5 ----------------
-mt5_lock = threading.Lock()
-mt5_ready = False
-
-mt5_fail = {"at": 0.0, "msg": ""}
-
-def mt5_init():
-    """Connect once; after a failure, wait 30 s before trying again so pages never hang."""
-    global mt5_ready
-    import MetaTrader5 as mt5
-    if mt5_ready and mt5.terminal_info() is not None and mt5.account_info() is not None:
-        return mt5, None
-    mt5_ready = False
-    if time.time() - mt5_fail["at"] < 30:
-        return None, mt5_fail["msg"]
-    ok = mt5.initialize(path=MT5_TERMINAL_PATH, timeout=10000)
-    if not ok or mt5.account_info() is None:
-        mt5_fail.update(at=time.time(), msg=f"MT5 not logged in ({mt5.last_error()}). Open MetaTrader 5 and log in to your demo account.")
-        return None, mt5_fail["msg"]
-    mt5_ready = True
-    return mt5, None
-
-def mt5_resolve(mt5, symbol):
-    for s in (symbol, symbol + "m", symbol + ".", symbol + "z"):  # broker suffixes, e.g. XAUUSDm
-        if mt5.symbol_select(s, True):
-            return s
-    return None
-
-def mt5_bars(mt5, sym, tf, count):
-    tfc = getattr(mt5, "TIMEFRAME_" + tf)
-    rates = mt5.copy_rates_from_pos(sym, tfc, 0, count)
-    if rates is None:
-        return []
-    return [{"time": int(r["time"]), "open": float(r["open"]), "high": float(r["high"]),
-             "low": float(r["low"]), "close": float(r["close"]), "volume": float(r["tick_volume"])} for r in rates]
-
-async def stream_mt5(ws, symbol, tf):
-    def setup():
-        with mt5_lock:
-            mt5, err = mt5_init()
-            if err:
-                return None, None, err
-            sym = mt5_resolve(mt5, symbol)
-            if not sym:
-                return None, None, f"Symbol {symbol} not found at this broker."
-            return sym, mt5_bars(mt5, sym, tf, HISTORY), None
-    sym, bars, err = await asyncio.to_thread(setup)
-    if err:
-        await ws.send(json.dumps({"type": "error", "msg": err}))
-        return
-    await ws.send(json.dumps({"type": "history", "bars": bars, "source": "mt5", "symbol": sym, "tf": tf}))
-    import MetaTrader5 as mt5
-    last = None
-    while True:
-        def poll():
-            with mt5_lock:
-                return mt5_bars(mt5, sym, tf, 1)
-        b = await asyncio.to_thread(poll)
-        if b and b[-1] != last:
-            last = b[-1]
-            record_tick("mt5", symbol, 0)
-            await ws.send(json.dumps({"type": "bar", "bar": last, "sent": int(time.time() * 1000)}))
-        await asyncio.sleep(0.1)  # 10 checks per second
-
-# ---------------- Remote MT5 (bridge/mt5_bridge.py on another machine, through an SSH tunnel) ----------------
-# Internal source id "arm". Tickers carry an "RMT_" prefix so they never clash with other feeds' tickers.
-ARM_HOST, ARM_PORT = "127.0.0.1", int(os.environ.get("REMOTE_MT5_BRIDGE_PORT", "8797"))
-ARM_SYMBOLS_FILE = os.path.join(CACHE_DIR, "remote_symbols_cache.json")
-arm_symbols_cache = []
-arm_status = {"msg": "connecting to the remote MT5 bridge..." if REMOTE_ON else "off"}
-arm_bars_cache = {}  # (symbol, tf, limit) -> last good candles: shown while the remote side reconnects, so the chart never goes blank
-ARM_SSH = ["ssh", "-o", "BatchMode=yes", "-o", "ConnectTimeout=15"]
-arm_tunnel_proc = None
-restart_state = {"running": False, "step": "", "ok": None, "at": 0}
-
-def arm_tunnel_loop():
-    """The chart server owns the SSH link to the remote bridge: it starts with the hub and comes back 5 s after any drop."""
-    global arm_tunnel_proc
-    while True:
-        try:
-            err_path = os.path.join(logbus.LOG_DIR, "ssh_link.err")
-            err_file = open(err_path, "w", encoding="utf-8")
-            arm_tunnel_proc = subprocess.Popen(ARM_SSH + ["-N", "-o", "ExitOnForwardFailure=yes", "-o", "ServerAliveInterval=15", "-o", "ServerAliveCountMax=3",
-                                                          "-L", f"{ARM_PORT}:127.0.0.1:{ARM_PORT}", REMOTE_SSH_HOST],
-                                               stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL, stderr=err_file, creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0))
-            logbus.ev("link", "debug", "SSH link process started", every=60)
-            try:
-                rc = arm_tunnel_proc.wait(timeout=20)
-            except subprocess.TimeoutExpired:  # it held the ports for 20 s: this link is the owner
-                logbus.problem("link.owner")
-                rc = arm_tunnel_proc.wait()
-            err_file.close()
-            reason = open(err_path, encoding="utf-8", errors="replace").read().strip()[-200:]
-            logbus.problem("link.owner", "another program holds the SSH link ports, so this server's link cannot start" if "already in use" in reason else None)
-            logbus.ev("link", "error", f"SSH link process ended (exit {rc}){': ' + reason if reason else ''}; reconnecting in 5 s", every=60)
-        except Exception as e:
-            logbus.ev("link", "error", f"SSH link could not start: {e}", every=60)
-        time.sleep(5)
-
-def arm_kill_tunnel():
-    """Drop the SSH link (Windows: whichever ssh holds the port). arm_tunnel_loop brings ours back."""
-    if os.name != "nt":
-        if arm_tunnel_proc:
-            arm_tunnel_proc.kill()
-        return
-    out = subprocess.run(["netstat", "-ano"], capture_output=True, text=True, timeout=10).stdout
-    pids = {l.split()[-1] for l in out.splitlines() if f"127.0.0.1:{ARM_PORT} " in l and "LISTENING" in l}
-    for pid in pids:
-        names = subprocess.run(["tasklist", "/FI", f"PID eq {pid}", "/NH"], capture_output=True, text=True, timeout=10).stdout
-        if "ssh.exe" in names.lower():
-            subprocess.run(["taskkill", "/F", "/PID", pid], capture_output=True, timeout=10)
-
-def arm_answers():
+def save_symbols(name, rows):
+    """Keep the symbol list on disk so the app can list markets (and open stored charts) without internet."""
     try:
-        return bool(arm_get("/health", timeout=8).get("ok"))
+        os.makedirs(CACHE_DIR, exist_ok=True)
+        with open(os.path.join(CACHE_DIR, f"symbols_{name}.json"), "w", encoding="utf-8") as f:
+            json.dump(rows, f)
     except Exception:
-        return False
-
-def arm_restart():
-    """Restart button: fresh link, then (if REMOTE_MT5_RESTART_CMD is set) that command over SSH with argument
-    "bridge", and if the bridge is still silent, with argument "full"."""
-    def step(s):
-        restart_state["step"] = s
-        logbus.ev("restart", "info", s)
-    def remote(mode, timeout):
-        if REMOTE_RESTART_CMD:
-            subprocess.run(ARM_SSH + ["-n", REMOTE_SSH_HOST, f"{REMOTE_RESTART_CMD} {mode}"], capture_output=True, timeout=timeout,
-                           creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0))
-    def wait_ok(seconds):
-        end = time.time() + seconds
-        while time.time() < end:
-            if arm_answers():
-                return True
-            time.sleep(2)
-        return False
-    restart_state.update(running=True, ok=None, at=time.time())
-    try:
-        step("Reconnecting the SSH link")
-        arm_kill_tunnel()
-        time.sleep(6)
-        ok = wait_ok(15)
-        if not ok and REMOTE_RESTART_CMD:
-            step("Restarting the remote bridge")
-            remote("bridge", 40)
-            ok = wait_ok(15)
-            if not ok:
-                step("Bridge still silent: full restart on the remote machine (about 1 min)")
-                remote("full", 150)
-                ok = wait_ok(30)
-        _status_cache["at"] = 0
-        restart_state.update(ok=ok)
-        step("Remote MT5 is back" if ok else "Remote MT5 did not come back. Check the remote machine over SSH.")
-    except Exception as e:
-        restart_state.update(ok=False)
-        step(f"Restart failed: {e.__class__.__name__}: {e}")
-    restart_state["running"] = False
-
-def arm_get(path, conn=None, timeout=30):
-    import http.client
-    c = conn or http.client.HTTPConnection(ARM_HOST, ARM_PORT, timeout=timeout)
-    c.request("GET", path)
-    r = c.getresponse()
-    data = json.loads(r.read())
-    if conn is None:
-        c.close()
-    if isinstance(data, dict) and data.get("error"):
-        raise RuntimeError(data["error"])
-    return data
-
-def arm_raw(ticker):
-    return ticker[4:] if ticker.startswith("RMT_") else ticker
-
-METAL_PREFIX = ("XAU", "XAG", "XPT", "XPD", "XAL", "XCU", "XNI", "XPB", "XZN")
-
-def arm_group(name, path):
-    """Group from the broker folder path (Forex, Metals, Crypto, Nasdaq ...)."""
-    parts = [p.lower() for p in (path or "").split("\\")]
-    if name.upper().startswith(METAL_PREFIX) or "metals" in parts:
-        return "arm-metal"
-    for p in parts:
-        if p.startswith("crypto"): return "arm-crypto"
-        if p.startswith("forex"): return "arm-forex"
-        if p in ("indices", "indexes", "idx_enlarge"): return "arm-index"
-        if p.startswith("energ"): return "arm-energy"
-        if p in ("stocks", "nasdaq"): return "arm-stock"
-    return "arm-other"
-
-ARM_ORDER = ["arm-metal", "arm-crypto", "arm-forex", "arm-index", "arm-energy", "arm-other", "arm-stock"]
-
-def arm_symbols_loop():
-    """Background: fetch the remote symbol list; retry every 30 s until it answers, then refresh every 10 min
-    (so switching the remote MT5 to another account shows up without restarting this server)."""
-    global arm_symbols_cache
-    if not REMOTE_ON:
-        return
-    os.makedirs(CACHE_DIR, exist_ok=True)
-    try:  # last known list, so remote charts exist even if the hub opens during an outage
-        with open(ARM_SYMBOLS_FILE, encoding="utf-8") as f:
-            arm_symbols_cache = json.load(f)
-    except (OSError, ValueError):
         pass
-    while True:
-        try:
-            rows = arm_get("/symbols", timeout=60)
-            out = [{"ticker": "RMT_" + s["name"], "name": "Remote MT5 - " + (s["desc"] or s["name"]),
-                    "source": "arm", "group": arm_group(s["name"], s["path"]), "digits": s["digits"]} for s in rows]
-            out.sort(key=lambda x: (ARM_ORDER.index(x["group"]), x["ticker"]))
-            if len(out) != len(arm_symbols_cache):
-                print(f"Remote MT5: {len(out)} symbols", flush=True)
-            arm_symbols_cache = out
-            with open(ARM_SYMBOLS_FILE, "w", encoding="utf-8") as f:
-                json.dump(out, f)
-            arm_status["msg"] = "ok"
-            time.sleep(600)
-        except Exception as e:
-            arm_status["msg"] = f"remote MT5 bridge unreachable ({e}). Is the SSH tunnel on port {ARM_PORT} running?"
-            print("Remote MT5:", arm_status["msg"], flush=True)
-            time.sleep(30)
 
-def arm_history(symbol, tf, limit=HISTORY, to_ms=None):
-    from urllib.parse import quote
-    path = f"/bars?symbol={quote(arm_raw(symbol))}&tf={tf}&limit={int(limit)}" + (f"&to={int(to_ms)}" if to_ms else "")
-    if to_ms:
-        return arm_get(path, timeout=20)
-    key = (symbol, tf, int(limit))
+def load_symbols(name):
     try:
-        bars = arm_get(path, timeout=20)
-        arm_bars_cache[key] = bars
-        return bars
+        with open(os.path.join(CACHE_DIR, f"symbols_{name}.json"), encoding="utf-8") as f:
+            return json.load(f)
     except Exception:
-        if key in arm_bars_cache:  # reconnecting: keep the chart on its last good candles
-            logbus.ev("feed.arm", "warn", f"{symbol} {tf}: bridge not answering, serving last good candles", every=30)
-            return arm_bars_cache[key]
-        raise
+        return []
 
-async def stream_arm(ws, symbol, tf):
-    import http.client
-    from urllib.parse import quote
-    while True:  # the remote side may be restarting: keep trying, the chart page stays open and fills in when it answers
-        try:
-            bars = await asyncio.to_thread(arm_history, symbol, tf)
-            break
-        except Exception as e:
-            await ws.send(json.dumps({"type": "status", "msg": f"Remote MT5 reconnecting: {e}"}))
-            await asyncio.sleep(3)
-    await ws.send(json.dumps({"type": "history", "bars": bars, "source": "arm", "symbol": symbol, "tf": tf}))
-    raw = quote(arm_raw(symbol))
-    conn, after = None, ""
-    while True:
-        try:
-            if conn is None:
-                conn = http.client.HTTPConnection(ARM_HOST, ARM_PORT, timeout=40)
-            m = await asyncio.to_thread(arm_get, f"/wait?symbol={raw}&tf={tf}&after={quote(after)}", conn)
-            if m["key"] != after and m["bar"]:
-                after = m["key"]
-                lag = record_tick("arm", symbol, m["tick_ms"]) if m.get("tick_ms") else None
-                await ws.send(json.dumps({"type": "bar", "bar": m["bar"], "sent": int(time.time() * 1000), "lag_ms": lag}))
-        except websockets.ConnectionClosed:
-            return
-        except Exception as e:
-            try:
-                conn.close()
-            except Exception:
-                pass
-            conn = None
-            await ws.send(json.dumps({"type": "status", "msg": f"Remote MT5 reconnecting: {e}"}))
-            await asyncio.sleep(3)
 
 # ---------------- Binance (no login) ----------------
 async def stream_binance(ws, symbol, tf):
@@ -430,6 +171,7 @@ def bybit_load_symbols():
         for x in out:
             x.pop("_t")
         bybit_symbols_cache = out
+        save_symbols("bybit", out)
         print(f"Bybit: {len(out)} charts loaded", flush=True)
         return True
     except Exception as e:
@@ -606,6 +348,7 @@ def deriv_load_symbols():
                         "source": "deriv", "group": g, "digits": digits, "open": bool(s.get("exchange_is_open"))})
         out.sort(key=lambda x: (["commodity", "forex", "indices", "crypto"].index(x["group"]), x["ticker"]))
         deriv_symbols_cache = out
+        save_symbols("deriv", out)
         print(f"Deriv: {len(out)} symbols loaded", flush=True)
         return True
     except Exception as e:
@@ -695,7 +438,10 @@ async def handler(ws):
             if tf not in TF_SEC:
                 await ws.send(json.dumps({"type": "error", "msg": f"Unknown timeframe {tf}"}))
                 continue
-            fn = {"mt5": stream_mt5, "deriv": stream_deriv, "arm": stream_arm, "bybit": stream_bybit}.get(src, stream_binance)
+            if ofs.local_mode():
+                await ws.send(json.dumps({"type": "status", "msg": "Local data mode: no live feed"}))
+                continue
+            fn = {"deriv": stream_deriv, "bybit": stream_bybit}.get(src, stream_binance)
             task = feedlog.start_stream(fn, ws, src if fn is not stream_binance else "binance", sym, tf)
     except websockets.ConnectionClosed:
         pass
@@ -713,78 +459,40 @@ def binance_history(symbol, tf, limit=HISTORY, to_ms=None):
     return [{"time": k[0] // 1000, "open": float(k[1]), "high": float(k[2]), "low": float(k[3]),
              "close": float(k[4]), "volume": float(k[5])} for k in rows]
 
+
+def hist_for(src):
+    return {"deriv": deriv_history, "bybit": bybit_history}.get(src, binance_history)
+
+def bars_for(src, sym, tf, limit, to):
+    """Chart candles. Local mode: only the local store. Live mode: the feed (older bars come from the store when it has
+    them, so charts open fast); with no internet the store answers instead."""
+    limit = int(limit)
+    if ofs.local_mode():
+        return ofs.load(src, sym, tf, to, limit)
+    try:
+        hist = hist_for(src)
+        if to:                                                   # scrolling back in time
+            cached = ofs.load(src, sym, tf, to, limit)
+            return cached if len(cached) >= limit else hist(sym, tf, limit, to)
+        if ofs.has(src, sym, tf):                                # newest bars from the feed, the rest from the store
+            fresh = hist(sym, tf, min(limit, 1000), None)
+            ofs.remember(src, sym, tf, fresh)
+            return ofs.stitch(src, sym, tf, fresh, limit)
+        return hist(sym, tf, limit, None)
+    except Exception as e:
+        cached = ofs.load(src, sym, tf, to, limit)
+        if cached:
+            logbus.ev("server", "warn", f"{src} {sym} {tf}: feed unreachable ({e.__class__.__name__}), serving the local store", every=60)
+            return cached
+        raise
+
 CRYPTO = [("BTCUSD", "Bitcoin"), ("ETHUSD", "Ethereum"), ("SOLUSD", "Solana"), ("BNBUSD", "BNB"),
           ("XRPUSD", "XRP"), ("DOGEUSD", "Dogecoin"), ("ADAUSD", "Cardano"), ("LINKUSD", "Chainlink"),
           ("PAXGUSD", "Gold token PAXG (thin trading, not gold spot)")]
-MT5_GROUPS = ("forex", "metal", "energ", "commod", "oil", "agri", "soft")  # path words we keep
-
-def mt5_watchdog():
-    """Background: keep trying to connect to MT5 once a minute. Requests never wait for it."""
-    if not LOCAL_MT5:
-        return
-    while True:
-        if not mt5_ready:
-            with mt5_lock:
-                mt5_fail["at"] = 0
-                _, err = mt5_init()
-            print("MT5:", "connected" if not err else err, flush=True)
-        time.sleep(60)
-
-_mt5_list_cache = {"at": 0, "data": None}
-
-def mt5_symbol_list():
-    """Cached 60 s: every request used to call into the local MT5, and one stuck call froze the whole server."""
-    if _mt5_list_cache["data"] is not None and time.time() - _mt5_list_cache["at"] < 60:
-        return _mt5_list_cache["data"]
-    res = _mt5_symbol_list()
-    if res[0]:
-        _mt5_list_cache.update(at=time.time(), data=res)
-    return res
-
-def _mt5_symbol_list():
-    """Every forex pair and commodity the logged-in broker offers. Empty if MT5 is not logged in."""
-    if not LOCAL_MT5:
-        return [], "off"
-    if not mt5_ready:
-        return [], mt5_fail["msg"] or "MT5 connecting..."
-    with mt5_lock:
-        mt5, err = mt5_init()
-        if err:
-            return [], err
-        out = []
-        for s in mt5.symbols_get() or []:
-            path = (s.path or "").lower()
-            group = next((g for g in MT5_GROUPS if g in path), None)
-            if not group:
-                continue
-            kind = "forex" if group == "forex" else "commodity"
-            out.append({"ticker": s.name, "name": s.description or s.name, "source": "mt5", "group": kind,
-                        "digits": s.digits, "path": s.path})
-        out.sort(key=lambda x: (x["group"] != "forex", x["ticker"]))
-        return out, None
-
-def mt5_history(symbol, tf, limit=HISTORY, to_ms=None):
-    from datetime import datetime, timezone
-    with mt5_lock:
-        mt5, err = mt5_init()
-        if err:
-            raise RuntimeError(err)
-        if not mt5.symbol_select(symbol, True):
-            raise RuntimeError(f"{symbol} not available at this broker")
-        tfc = getattr(mt5, "TIMEFRAME_" + tf)
-        if to_ms:
-            rates = mt5.copy_rates_from(symbol, tfc, datetime.fromtimestamp(int(to_ms) / 1000, tz=timezone.utc), int(limit))
-        else:
-            rates = mt5.copy_rates_from_pos(symbol, tfc, 0, int(limit))
-    if rates is None:
-        return []
-    return [{"time": int(r["time"]), "open": float(r["open"]), "high": float(r["high"]), "low": float(r["low"]),
-             "close": float(r["close"]), "volume": float(r["tick_volume"])} for r in rates]
-
-# ---------------- Instrument map (TradeX: switch broker, stay on the same instrument) ----------------
+# ---------------- Instrument map (Madar Chart: switch broker, stay on the same instrument) ----------------
 # One instrument = the same underlying market at several brokers. Only exact matches are joined:
 # gold tokens (PAXG, XAUT) are NOT gold spot, so they stay separate instruments.
-BROKERS = [("deriv", "Deriv"), ("bybit", "Bybit"), ("binance", "Binance")] + ([("arm", "Remote MT5")] if REMOTE_ON else []) + ([("mt5", "Local MT5")] if LOCAL_MT5 else [])
+BROKERS = [("deriv", "Deriv"), ("bybit", "Bybit"), ("binance", "Binance")]
 DERIV_INDEX = {"OTC_NDX": "USTEC", "OTC_DJI": "US30", "OTC_SPC": "US500", "OTC_FTSE": "UK100", "OTC_GDAXI": "DE30",
                "OTC_FCHI": "FR40", "OTC_N225": "JP225", "OTC_HSI": "HK50", "OTC_AS51": "AUS200", "OTC_SX5E": "STOXX50"}
 def variant_rank(label):
@@ -799,13 +507,9 @@ _instr_cache = {"n": -1, "data": None}
 def instrument_key(s):
     """(key, variant label) for a symbol, or (None, None) when it has no cross-broker meaning."""
     t, src = s["ticker"], s["source"]
-    if src == "arm":
-        return t[4:], None
     if src == "deriv":
         if t in DERIV_INDEX: return DERIV_INDEX[t], None
         if t[:3] in ("frx", "cry"): return t[3:], None
-        return t, None
-    if src == "mt5":
         return t, None
     if src == "binance":
         return t, None
@@ -830,7 +534,7 @@ def instrument_key(s):
     return None, None
 
 def build_instruments():
-    syms = arm_symbols_cache + deriv_symbols_cache + bybit_symbols_cache + mt5_symbol_list()[0] + \
+    syms = deriv_symbols_cache + bybit_symbols_cache + \
         [{"ticker": t, "name": n, "source": "binance", "group": "crypto"} for t, n in CRYPTO]
     if _instr_cache["n"] == len(syms):
         return _instr_cache["data"]
@@ -842,10 +546,8 @@ def build_instruments():
         i = inst.setdefault(k, {"key": k, "name": "", "group": s["group"], "brokers": {}})
         opts = i["brokers"].setdefault(s["source"], [])
         opts.append({"ticker": s["ticker"], "label": variant or "", "_o": variant_rank(variant or "")})
-        if s["source"] == "arm" or not i["name"]:
-            i["name"] = s["name"].replace("Remote MT5 - ", "").split(" (")[0]
-            if s["source"] == "arm":
-                i["group"] = s["group"].replace("arm-", "")
+        if not i["name"]:
+            i["name"] = s["name"].split(" (")[0]
     out = []
     for i in inst.values():
         for src, opts in i["brokers"].items():
@@ -861,22 +563,14 @@ def build_instruments():
 _status_cache = {"at": 0, "data": None}
 
 def feed_status():
-    """Small, cached (5 s) health of each broker feed for the TradeX status lights."""
+    """Small, cached (5 s) health of each broker feed for the Madar Chart status lights."""
     if time.time() - _status_cache["at"] < 5:
         return _status_cache["data"]
     data = {"deriv": {"ok": bool(deriv_symbols_cache), "msg": f"{len(deriv_symbols_cache)} symbols"},
             "bybit": {"ok": bool(bybit_symbols_cache), "msg": f"{len(bybit_symbols_cache)} charts"},
             "binance": {"ok": True, "msg": "public feed"}}
-    if REMOTE_ON:
-        try:
-            h = arm_get("/health", timeout=3)
-            data["arm"] = {"ok": True, "msg": f"connected ({h.get('server') or 'MT5'})"}
-        except Exception as e:
-            data["arm"] = {"ok": False, "msg": f"link down ({e.__class__.__name__}); it reconnects by itself"}
-    if LOCAL_MT5:
-        data["mt5"] = {"ok": bool(mt5_ready), "msg": "connected" if mt5_ready else (mt5_fail.get("msg") or "not connected")}
     for k, v in data.items():  # one log line per change of a status light
-        logbus.state("feed." + k, "ok", v["ok"], "info" if v["ok"] else "error" if k == "arm" else "warn", ("up: " if v["ok"] else "DOWN: ") + v["msg"])
+        logbus.state("feed." + k, "ok", v["ok"], "info" if v["ok"] else "warn", ("up: " if v["ok"] else "DOWN: ") + v["msg"])
         logbus.problem("feed." + k, None if v["ok"] else v["msg"])
     _status_cache.update(at=time.time(), data=data)
     return data
@@ -893,25 +587,25 @@ def static_allowed(url_path):
     parts = [x for x in p.split("/") if x]
     if any(x.startswith(".") for x in parts) or "\\" in p:
         return False
-    if len(parts) == 1 or (len(parts) == 2 and parts[0] == "vendor"):
+    if len(parts) == 1:
         return parts[-1].lower().endswith(STATIC_EXT)
     return False
 
 class LabHandler(SimpleHTTPRequestHandler):
-    """Static files plus GET /api/bars?symbol=&tf=&limit=&to=<ms>&source=binance|mt5 and GET /api/symbols."""
+    """Static files plus GET /api/bars?symbol=&tf=&limit=&to=<ms>&source=binance|deriv|bybit and GET /api/symbols."""
     def do_GET(self):
         from urllib.parse import urlparse, parse_qs
         if self.path.startswith("/api/symbols"):
             crypto = [{"ticker": t, "name": n, "source": "binance", "group": "crypto"} for t, n in CRYPTO]
-            mt5_list, err = mt5_symbol_list()
-            return self._json({"symbols": arm_symbols_cache + bybit_symbols_cache + deriv_symbols_cache + mt5_list + crypto, "mt5": err or "ok", "arm": arm_status["msg"],
+            return self._json({"symbols": bybit_symbols_cache + deriv_symbols_cache + crypto,
                                "deriv": len(deriv_symbols_cache), "bybit": len(bybit_symbols_cache), "ws_port": WS_PORT}, 200)
-        if self.path.startswith("/api/restart"):
-            return self._json(restart_state, 200)
         if self.path.startswith("/api/logs"):
             q = {k: v[0] for k, v in parse_qs(urlparse(self.path).query).items()}
             since = q.get("since", "0")
             return self._json({**logbus.snapshot(int(since) if since.isdigit() else 0, brief="brief" in q), "journal_raw": False}, 200)
+        if self.path.startswith("/api/offline/status"):
+            return self._json({"local": ofs.local_mode(), "job": {k: v for k, v in ofs.job.items() if k != "cancel"},
+                               "assets": ofs.assets(), "profiles": list(ofs.PROFILES)}, 200)
         if self.path.startswith("/api/status"):
             return self._json(feed_status(), 200)
         if self.path.startswith("/api/instruments"):
@@ -924,7 +618,7 @@ class LabHandler(SimpleHTTPRequestHandler):
             q = {k: v[0] for k, v in parse_qs(urlparse(self.path).query).items()}
             try:
                 src = q.get("feed") or "binance"
-                hist = {"mt5": mt5_history, "deriv": deriv_history, "arm": arm_history, "bybit": bybit_history}.get(src, binance_history)
+                hist = {"deriv": deriv_history, "bybit": bybit_history}.get(src, binance_history)
                 now = int(time.time())
                 rows, info = orderflow_api.delta(q.get("symbol", "frxXAUUSD"), q.get("tf", "M5"), int(q.get("from", now - 86400)),
                                                  int(q.get("to", now)), q.get("source", "auto"), history=hist)
@@ -938,7 +632,7 @@ class LabHandler(SimpleHTTPRequestHandler):
             q = {k: v[0] for k, v in parse_qs(urlparse(self.path).query).items()}
             try:
                 src = q.get("feed") or "binance"
-                hist = {"mt5": mt5_history, "deriv": deriv_history, "arm": arm_history, "bybit": bybit_history}.get(src, binance_history)
+                hist = {"deriv": deriv_history, "bybit": bybit_history}.get(src, binance_history)
                 now = int(time.time()); tf = q.get("tf", "M5"); sym = q.get("symbol", "frxXAUUSD")
                 a, b = int(q.get("from", now - 3 * 3600)), int(q.get("to", now))
                 sec = orderflow_api.TF_SEC[tf]
@@ -956,7 +650,7 @@ class LabHandler(SimpleHTTPRequestHandler):
             q = {k: v[0] for k, v in parse_qs(urlparse(self.path).query).items()}
             try:
                 src = q.get("feed") or "binance"
-                hist = {"mt5": mt5_history, "deriv": deriv_history, "arm": arm_history, "bybit": bybit_history}.get(src, binance_history)
+                hist = {"deriv": deriv_history, "bybit": bybit_history}.get(src, binance_history)
                 now = int(time.time())
                 sess, info = orderflow_api.profile(q.get("symbol", "frxXAUUSD"), q.get("tf", "M5"), int(q.get("from", now - 86400)),
                                                    int(q.get("to", now)), q.get("source", "auto"), history=hist,
@@ -973,8 +667,7 @@ class LabHandler(SimpleHTTPRequestHandler):
             return super().do_GET()
         q = {k: v[0] for k, v in parse_qs(urlparse(self.path).query).items()}
         try:
-            fn = {"mt5": mt5_history, "deriv": deriv_history, "arm": arm_history, "bybit": bybit_history}.get(q.get("source"), binance_history)
-            bars = fn(q.get("symbol", "BTCUSD"), q.get("tf", "M1"), q.get("limit", HISTORY), q.get("to"))
+            bars = bars_for(q.get("source") or "binance", q.get("symbol", "BTCUSD"), q.get("tf", "M1"), q.get("limit", HISTORY), q.get("to"))
             body, code = json.dumps(bars).encode(), 200
             feedlog.http_bars(q.get("source"), q.get("symbol"), q.get("tf"), n=len(bars))
         except Exception as e:
@@ -989,7 +682,7 @@ class LabHandler(SimpleHTTPRequestHandler):
     def do_POST(self):
         """Only /api/restart (Restart button) and /api/logs/journal (log panel).
         Same-origin JSON only, so another web page open in the browser cannot act through this local server."""
-        if not self.path.startswith(("/api/restart", "/api/logs/journal")):
+        if not self.path.startswith(("/api/logs/journal", "/api/offline/")):
             return self._json({"error": "not found"}, 404)
         origin = self.headers.get("Origin", "")
         if origin and origin not in (f"http://localhost:{HTTP_PORT}", f"http://127.0.0.1:{HTTP_PORT}"):
@@ -1002,14 +695,26 @@ class LabHandler(SimpleHTTPRequestHandler):
         if self.path.startswith("/api/logs/journal"):
             self.rfile.read(n)
             return self._json({"ok": True}, 200)
-        if self.path.startswith("/api/restart"):
-            self.rfile.read(n)
-            if not REMOTE_ON:
-                return self._json({"running": False, "step": "", "ok": None}, 200)
-            if not restart_state["running"]:
-                restart_state["running"] = True  # set here so a double click cannot start two restarts
-                threading.Thread(target=arm_restart, daemon=True).start()
-            return self._json(restart_state, 200)
+        try:
+            body = json.loads(self.rfile.read(n) or b"{}")
+        except Exception:
+            return self._json({"error": "bad JSON"}, 400)
+        if self.path.startswith("/api/offline/mode"):
+            ofs.set_local_mode(bool(body.get("local")))
+            logbus.ev("server", "info", "data mode: " + ("LOCAL only" if body.get("local") else "LIVE"), persist=False)
+            return self._json({"local": ofs.local_mode()}, 200)
+        if self.path.startswith("/api/offline/download"):
+            src, tk = str(body.get("source") or ""), str(body.get("ticker") or "")
+            if src not in ("deriv", "bybit", "binance") or not tk:
+                return self._json({"error": "source and ticker needed"}, 400)
+            ok = ofs.start_download(hist_for, src, tk, body.get("profile") or "standard")
+            return self._json({"queued": ok}, 200)
+        if self.path.startswith("/api/offline/cancel"):
+            ofs.cancel()
+            return self._json({"ok": True}, 200)
+        if self.path.startswith("/api/offline/delete"):
+            ofs.delete(str(body.get("source") or ""), str(body.get("ticker") or ""))
+            return self._json({"ok": True}, 200)
         return self._json({"error": "not found"}, 404)
 
     def _raw(self, code, raw):
@@ -1051,17 +756,16 @@ def run_http():
     HubHTTPServer(("127.0.0.1", HTTP_PORT), h).serve_forever()
 
 async def main():
+    global deriv_symbols_cache, bybit_symbols_cache
+    deriv_symbols_cache = deriv_symbols_cache or load_symbols("deriv")   # markets list works without internet
+    bybit_symbols_cache = bybit_symbols_cache or load_symbols("bybit")
     logbus.install(lambda: CLOCK_OFFSET_MS)
     threading.Thread(target=run_http, daemon=True).start()
-    threading.Thread(target=mt5_watchdog, daemon=True).start()
-    if REMOTE_ON:
-        threading.Thread(target=arm_symbols_loop, daemon=True).start()
-        threading.Thread(target=arm_tunnel_loop, daemon=True).start()
-    print(f"Clock offset vs time.windows.com: {measure_clock_offset():+.0f} ms (corrected in lag numbers)", flush=True)
+    threading.Thread(target=lambda: print(f"Clock offset vs time.windows.com: {measure_clock_offset():+.0f} ms (corrected in lag numbers)", flush=True), daemon=True).start()  # off the start-up path: no internet means a slow timeout
     threading.Thread(target=deriv_symbols_loop, daemon=True).start()
     threading.Thread(target=bybit_symbols_loop, daemon=True).start()
-    feedlog.start(FEED_HEALTH, ARM_PORT if REMOTE_ON else None, feed_status)
-    print(f"TradeX: open http://localhost:{HTTP_PORT}/hub.html  (data on ws://localhost:{WS_PORT})", flush=True)
+    feedlog.start(FEED_HEALTH, None, feed_status)
+    print(f"Madar Chart: open http://localhost:{HTTP_PORT}/hub.html  (data on ws://localhost:{WS_PORT})", flush=True)
     async with websockets.serve(handler, "127.0.0.1", WS_PORT, max_size=None):
         await asyncio.Future()
 

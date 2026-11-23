@@ -31,7 +31,7 @@
     start(ctx, inputs) {
       this.ctx = ctx; this.inputs = { ...defaults(), ...inputs }; this.rows = new Map(); this.info = null;
       this.ticker = String(ctx.symbol).replace(/^[a-z]+:/i, ""); this.tf = TF[ctx.timeframe] || (window.LabTF ? LabTF.fromAny(ctx.timeframe) : "M5");
-      this.feed = window.srcOf ? srcOf(this.ticker) : "arm"; this.busy = false; this.lastLive = 0; this.stopped = false;
+      this.feed = window.srcOf ? srcOf(this.ticker) : "deriv"; this.busy = false; this.lastLive = 0; this.stopped = false;
       this.load(true);
     }
     url(from, to) {

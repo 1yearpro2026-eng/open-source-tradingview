@@ -1,5 +1,5 @@
 <!doctype html>
-<html><head><meta charset="utf-8"><title>TradeX</title>
+<html><head><meta charset="utf-8"><title>Madar Chart</title>
 <script src="theme.js"></script>
 <style>
   * { box-sizing: border-box }
@@ -131,7 +131,7 @@
 </style></head><body>
 <div id="app">
 <div id="bar">
-  <span id="brand">TradeX</span><span class="sep"></span>
+  <span id="brand">Madar Chart</span><span class="sep"></span>
   <div id="pick"><input id="q" spellcheck="false" autocomplete="off" placeholder="Search instrument"><div id="list" hidden></div></div>
   <div class="seg" id="brokers" title="Broker: same instrument, different price source"></div>
   <select id="variant" title="Market type at this broker" hidden></select>
@@ -139,7 +139,6 @@
   <div class="seg" id="tfs"></div><span class="sep"></span>
   <select id="layout" title="Chart layout (Vela)"><option value="">1 chart</option><option value="2h">2 side by side</option><option value="2v">2 stacked</option><option value="4">4 charts</option><option value="8">8 charts</option></select>
   <span class="sep"></span>
-  <div class="seg" id="engines" title="Chart engine"></div>
 </div>
 <div id="stage"><iframe id="frame" title="chart"></iframe><div id="cover" hidden><div id="coverText"></div></div></div>
 <aside id="dock" hidden></aside>
@@ -147,21 +146,22 @@
   <button data-panel="indicators" title="Indicators, metrics, and strategies ( / )"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><path d="M3 17l5-6 4 4 4-7 5 6"/><path d="M3 21h18"/></svg></button>
   <button data-panel="pine" title="Pine Editor: write, import and add your own Pine scripts"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><path d="M8 7l-5 5 5 5M16 7l5 5-5 5M13.5 5l-3 14"/></svg></button>
   <button data-panel="feeds" title="Feeds: broker connection status"><svg width="18" height="18" viewBox="0 0 18 18" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M3 14a8 8 0 0 1 12 0M5.5 11.5a4.5 4.5 0 0 1 7 0"/><circle cx="9" cy="14.5" r="1.2" fill="currentColor"/></svg></button>
+  <button data-panel="offline" title="Local data: download charts to this computer and work without internet"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><path d="M12 4v11M7 11l5 5 5-5"/><path d="M4 19h16"/></svg></button>
   <button data-panel="settings" title="Settings: theme, colours, font" style="margin-top:auto;margin-bottom:6px"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.7 1.7 0 0 0 .3 1.8l.1.1a2 2 0 1 1-2.8 2.8l-.1-.1a1.7 1.7 0 0 0-1.8-.3 1.7 1.7 0 0 0-1 1.5V21a2 2 0 1 1-4 0v-.1a1.7 1.7 0 0 0-1.1-1.5 1.7 1.7 0 0 0-1.8.3l-.1.1a2 2 0 1 1-2.8-2.8l.1-.1a1.7 1.7 0 0 0 .3-1.8 1.7 1.7 0 0 0-1.5-1H3a2 2 0 1 1 0-4h.1a1.7 1.7 0 0 0 1.5-1.1 1.7 1.7 0 0 0-.3-1.8l-.1-.1a2 2 0 1 1 2.8-2.8l.1.1a1.7 1.7 0 0 0 1.8.3H9a1.7 1.7 0 0 0 1-1.5V3a2 2 0 1 1 4 0v.1a1.7 1.7 0 0 0 1 1.5 1.7 1.7 0 0 0 1.8-.3l.1-.1a2 2 0 1 1 2.8 2.8l-.1.1a1.7 1.7 0 0 0-.3 1.8V9a1.7 1.7 0 0 0 1.5 1H21a2 2 0 1 1 0 4h-.1a1.7 1.7 0 0 0-1.5 1z"/></svg></button>
 </nav>
-<footer id="status"><span id="lights"></span><button id="restart" title="Restart this chart. For Remote MT5: reconnects the SSH link and, if configured, restarts the bridge. Drawings on the chart are cleared.">Restart chart</button><span id="restartMsg"></span><span id="hud"></span><span id="clock"></span></footer>
+<footer id="status"><span id="lights"></span><span id="modeBadge" hidden style="color:var(--accent);font-weight:600" title="Local data mode: charts read only from this computer">LOCAL</span><button id="restart" title="Restart this chart: reconnects its feed. Drawings on the chart are cleared.">Restart chart</button><span id="restartMsg"></span><span id="hud"></span><span id="clock"></span></footer>
 </div>
 <script src="pine_convert.js"></script><script src="pine_style.js"></script><script src="ind_core.js"></script><script src="ind_dialog.js"></script><script src="pine_editor.js"></script>
 <script>
-// TradeX: one shell over every broker and every chart engine.
+// Madar Chart: one shell over every broker and every chart engine.
 // Broker switch keeps the instrument (gold stays gold); engine switch keeps instrument, broker and timeframe.
-const ENGINES = [["vela", "Vela"], ["lightweight", "Lightweight"], ["klinechart", "KLineChart"]];
 const TFS = [["M1", "1m"], ["M5", "5m"], ["M15", "15m"], ["M30", "30m"], ["H1", "1H"], ["H4", "4H"], ["D1", "D"]];
-const SHORT = { arm: "RMT", bybit: "BYB", deriv: "DER", mt5: "MT5", binance: "BIN" };
+const SHORT = { bybit: "BYB", deriv: "DER", binance: "BIN" };
 const $ = (id) => document.getElementById(id);
 let DATA = { brokers: [], instruments: [] }, BY_TICKER = new Map(), status = {};
 let st = { engine: "vela", key: "XAUUSD", broker: "deriv", ticker: "frxXAUUSD", tf: "M1" };
 try { Object.assign(st, JSON.parse(localStorage.getItem("chartHub") || "{}")); } catch (_) {}
+st.engine = "vela";  // Vela is the only chart engine
 const save = () => { try { localStorage.setItem("chartHub", JSON.stringify(st)); } catch (_) {} };
 const inst = (k) => DATA.instruments.find((i) => i.key === k);
 
@@ -169,11 +169,11 @@ async function init() {
   DATA = await (await fetch("/api/instruments")).json();
   DATA.instruments.forEach((i) => Object.entries(i.brokers).forEach(([b, opts]) => opts.forEach((o) => BY_TICKER.set(o.ticker, { key: i.key, broker: b }))));
   if (!inst(st.key) || !inst(st.key).brokers[st.broker]) Object.assign(st, { key: "XAUUSD", broker: "deriv", ticker: "frxXAUUSD" });
-  ENGINES.forEach(([id, n]) => $("engines").appendChild(btn(n, () => { st.engine = id; save(); paint(); loadEngine(); }, id)));
   TFS.forEach(([id, n]) => $("tfs").appendChild(btn(n, () => { st.tf = id; push(); }, id)));
   DATA.brokers.forEach((b) => { const x = btn("", () => chooseBroker(b.id), b.id); x.innerHTML = `<span class="dot"></span>${b.name}`; $("brokers").appendChild(x); });
   $("restart").onclick = restartChart;
   pollStatus(); setInterval(pollStatus, 10000);
+  offPoll(); setInterval(offPoll, 2000);
   paint(); loadEngine();
 }
 function btn(text, fn, id) { const b = document.createElement("button"); b.textContent = text; b.dataset.id = id; b.onclick = fn; return b; }
@@ -187,17 +187,11 @@ function cover(ticker) {
   $("coverText").textContent = `Loading ${ticker} ...`; $("cover").hidden = false;
   coverTimer = setTimeout(() => { if (pending) { $("coverText").textContent = `${ticker}: no candles after 20 s. Trying again by itself; or press Restart chart below.`; retryLoad(); } }, 20000);
 }
-// Restart button. Remote MT5 has a server side to restart (the chart server runs the steps); any other feed reconnects when the chart reloads.
+// Restart button: reloads the chart, which reconnects its feed.
 async function restartChart() {
   const b = $("restart"), msg = $("restartMsg"); b.disabled = true;
-  try {
-    if (st.broker === "arm") {
-      let r = await (await fetch("/api/restart", { method: "POST", headers: { "Content-Type": "application/json" }, body: "{}" })).json();
-      while (r.running) { msg.textContent = r.step || "Restarting remote MT5 ..."; await new Promise((d) => setTimeout(d, 1000)); r = await (await fetch("/api/restart")).json(); }
-      msg.textContent = r.step;
-    } else msg.textContent = "Reconnecting ...";
-    loadEngine(); pollStatus();
-  } catch (e) { msg.textContent = "Chart server not answering: run start.bat (Windows) or start.sh"; }
+  msg.textContent = "Reconnecting ...";
+  loadEngine(); pollStatus();
   b.disabled = false; setTimeout(() => { msg.textContent = ""; }, 15000);
 }
 function loadEngine() {
@@ -230,8 +224,6 @@ function chooseBroker(b) {
 function paint() {
   const i = inst(st.key);
   if (document.activeElement !== $("q")) $("q").value = i ? `${i.key}  ${i.name}` : st.ticker;
-  $("engines").querySelectorAll("button").forEach((b) => b.classList.toggle("on", b.dataset.id === st.engine));
-  $("layout").disabled = st.engine !== "vela"; if (st.engine !== "vela") $("layout").value = "";
   $("tfs").querySelectorAll("button").forEach((b) => b.classList.toggle("on", b.dataset.id === st.tf));
   $("brokers").querySelectorAll("button").forEach((b) => {
     const has = !!(i && i.brokers[b.dataset.id]), s = status[b.dataset.id];
@@ -316,8 +308,57 @@ function paintStatus() {
   if (openPanel === "feeds") renderFeeds();
 }
 
+
+// ---- Local data panel: download whole assets to disk, switch Live / Local only ----
+let offSig = "", offData = null;
+const fmtBytes = (b) => b > 1048576 ? (b / 1048576).toFixed(1) + " MB" : Math.max(1, Math.round(b / 1024)) + " KB";
+const fmtDay = (t) => new Date(t * 1000).toISOString().slice(0, 10);
+const TF_LABEL = { M1: "1m", M5: "5m", M15: "15m", M30: "30m", H1: "1H", H4: "4H", D1: "D" };
+const DEPTH_HELP = { light: "light: 1m 30 days, 5m 6 months, up to 10 years on D", standard: "standard: 1m 90 days, 5m 1 year, up to 20 years on D", deep: "deep: 1m 1 year, 5m 3 years (slower, bigger)" };
+async function offPost(path, body) { return (await fetch("/api/offline/" + path, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body || {}) })).json(); }
+async function offPoll() {
+  let n; try { n = await (await fetch("/api/offline/status")).json(); } catch (_) { return; }
+  const sig = JSON.stringify(n), changed = sig !== offSig; offSig = sig; offData = n;
+  $("modeBadge").hidden = !n.local;
+  if (openPanel === "offline" && changed) renderOffline();
+}
+function renderOffline() {
+  const d = $("dock"), o = offData;
+  if (!o) { d.innerHTML = "<h3>Local data</h3><div class='row'><span>Loading ...</span></div>"; offPoll(); return; }
+  const keep = d.querySelector("select") ? d.querySelector("select").value : "standard";
+  const j = o.job, busy = j.running;
+  d.innerHTML = "<h3>Local data</h3>";
+  const add = (html, cls) => { const r = document.createElement("div"); r.className = cls || "row"; r.style.flexWrap = "wrap"; r.innerHTML = html; d.appendChild(r); return r; };
+  const mode = add(`<b>Data mode</b><span style="display:flex;gap:6px"><button data-m="0">Live</button><button data-m="1">Local only</button></span>`);
+  mode.querySelectorAll("button").forEach((b) => { const on = (b.dataset.m === "1") === o.local; b.style.cssText = `padding:3px 10px;border:1px solid ${on ? "var(--accent)" : "var(--line)"};background:var(--bg);color:${on ? "var(--accent)" : "var(--text)"};border-radius:4px;cursor:pointer`;
+    b.onclick = async () => { await offPost("mode", { local: b.dataset.m === "1" }); await offPoll(); loadEngine(); }; });
+  add(`<span style="width:100%">${o.local ? "Charts read only from this computer. No internet needed. No live candles." : "Newest candles come from the feed; older ones load from this computer when downloaded. Without internet it falls back here by itself."}</span>`);
+  const i = inst(st.key);
+  const sel = add(`<b>${st.ticker}</b><span>${(DATA.brokers.find((b) => b.id === st.broker) || {}).name || st.broker} - every timeframe</span>`);
+  const dl = add(`<select style="flex:1;min-width:0">${o.profiles.map((p) => `<option value="${p}" ${p === keep ? "selected" : ""}>${p[0].toUpperCase() + p.slice(1)}</option>`).join("")}</select><button id="offGo">Download this asset</button>`);
+  dl.querySelector("select").title = Object.values(DEPTH_HELP).join("\n");
+  add(`<span style="width:100%">${DEPTH_HELP[keep]}</span>`);
+  const go = dl.querySelector("#offGo");
+  go.style.cssText = "padding:4px 10px;border:1px solid var(--accent);background:var(--bg);color:var(--accent);border-radius:4px;cursor:pointer";
+  go.onclick = async () => { await offPost("download", { source: st.broker, ticker: st.ticker, profile: dl.querySelector("select").value }); await offPoll(); };
+  dl.querySelector("select").onchange = () => renderOffline();
+  if (busy) {
+    const r = add(`<b>Downloading</b><span>${j.current ? j.current[1] : ""} ${j.tf ? TF_LABEL[j.tf] : ""} - ${j.bars.toLocaleString()} bars${j.done.length ? " - done: " + j.done.map((t) => TF_LABEL[t]).join(" ") : ""}${j.queue.length ? " - " + j.queue.length + " queued" : ""}</span><button>Cancel</button>`);
+    r.querySelector("button").onclick = async () => { await offPost("cancel"); await offPoll(); };
+  } else if (j.error) add(`<span style="color:var(--bad,#e55)">${j.error}</span>`);
+  else if (j.finished && j.done.length) add(`<span>Last download finished: ${j.done.map((t) => TF_LABEL[t]).join(" ")}</span>`);
+  const hdr = document.createElement("h3"); hdr.textContent = "Downloaded"; d.appendChild(hdr);
+  if (!o.assets.length) add("<span>Nothing downloaded yet.</span>");
+  o.assets.forEach((a) => {
+    const total = Object.values(a.tfs).reduce((n, t) => n + t.bars, 0);
+    const r = add(`<b style="min-width:0;flex:1">${a.ticker}</b><span>${a.source} - ${fmtBytes(a.bytes)} - ${total.toLocaleString()} bars</span><button title="Delete">x</button>`);
+    r.querySelector("button").onclick = async () => { if (confirm(`Delete the local data of ${a.ticker}?`)) { await offPost("delete", { source: a.source, ticker: a.ticker }); await offPoll(); } };
+    add(Object.entries(a.tfs).map(([tf, t]) => `${TF_LABEL[tf]}: ${t.bars.toLocaleString()} (${fmtDay(t.first)} to ${fmtDay(t.last)})`).join("<br>"), "row").style.cssText += ";font-size:11px;color:var(--dim)";
+  });
+}
+
 // ---- Dock panels (right side). Each panel is one render function; more plug in here later. ----
-const PANELS = { feeds: renderFeeds, settings: renderSettings, pine: renderPine };
+const PANELS = { feeds: renderFeeds, settings: renderSettings, pine: renderPine, offline: renderOffline };
 
 // ---- Settings: theme preset, font, candle and interface colours. Saved for every engine; applied live. ----
 function themeChanged() {

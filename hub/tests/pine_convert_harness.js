@@ -1,4 +1,4 @@
-// TradeX: convert Pine v1-v4 scripts to v5 and run them in pinets (the same engine as the chart) on real bars.
+// Madar Chart: convert Pine v1-v4 scripts to v5 and run them in pinets (the same engine as the chart) on real bars.
 // Usage (after `npm ci` in build/):
 //   node hub/tests/pine_convert_harness.js <bars.json> <scripts_dir> [--all]
 // bars.json:   an array of {time, open, high, low, close, volume} (for example the output of /api/bars)

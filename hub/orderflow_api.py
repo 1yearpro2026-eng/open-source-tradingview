@@ -1,4 +1,4 @@
-"""Order-flow numbers for any chart symbol: one engine for the TradeX, agents and scripts.
+"""Order-flow numbers for any chart symbol: one engine for the Madar Chart, agents and scripts.
 
 Step 1 (2026-11-12): delta per candle with its intrabar high and low (TradingView's Volume Delta / CVD candle rules).
 

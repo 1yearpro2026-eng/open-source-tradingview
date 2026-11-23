@@ -1,4 +1,4 @@
-"""One backend log for the TradeX: an in-memory ring (served by /api/logs) plus a rotating file (logs/hub.log).
+"""One backend log for the Madar Chart: an in-memory ring (served by /api/logs) plus a rotating file (logs/hub.log).
 
 Every source goes through ev(): server prints (Tee), feed events (feedlog.py), optional local log files.
 Never touches the chart path: no locks shared with feeds, ev() only appends to a deque and a small file.

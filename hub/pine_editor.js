@@ -1,4 +1,4 @@
-// TradeX indicators, part 3: Pine Editor (right dock panel, like TradingView's).
+// Madar Chart indicators, part 3: Pine Editor (right dock panel, like TradingView's).
 // Script picker, name, New / Open file (.pine/.txt) / Save / Add to chart, line numbers, Line:Col + version footer,
 // and a console with converter notes and engine errors. Own scripts live in localStorage "chartHubScripts".
 let ED = { id: null, name: "Untitled script", source: "//@version=6\nindicator(\"My script\", overlay = true)\nplot(ta.sma(close, 50), color = color.orange)\n", key: null, log: [] };

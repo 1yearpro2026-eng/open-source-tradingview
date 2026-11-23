@@ -3,5 +3,3 @@ websockets>=12,<18
 numpy>=1.26
 pandas>=2.1
 pyarrow>=15
-# Optional, Windows only, for a MetaTrader 5 terminal on this PC (LOCAL_MT5=1):
-# MetaTrader5

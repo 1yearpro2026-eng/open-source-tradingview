@@ -1,22 +1,35 @@
-// TradeX: Bar Replay control bar, 2026-11-23.
+// Madar Chart: Bar Replay control bar, 2026-11-23.
 // Vela has a replay API (chart.replay.start/step/play/pause/stop) but no button for it. This adds a small floating
 // bar over the chart: a "Replay" button opens the controls (start point, step, play/pause, speed, stop).
 // It always acts on the active chart cell. Start point: a quick preset or an exact date/time.
 (function () {
   const css = document.createElement("style");
   css.textContent = `
-  .tx-rp{position:absolute;z-index:29;top:8px;left:50%;transform:translateX(-50%);display:flex;align-items:center;gap:4px;
+  .mc-rp{position:absolute;z-index:29;top:8px;left:50%;transform:translateX(-50%);display:flex;align-items:center;gap:4px;
     padding:3px;border-radius:8px;flex-wrap:wrap;justify-content:center;max-width:calc(100% - 90px);background:var(--panel,#16212b);border:1px solid var(--line,#2b3946);
     box-shadow:0 4px 14px rgba(0,0,0,.28);user-select:none;color:var(--text,#d6dee5);font:12px system-ui,sans-serif}
-  .tx-rp button,.tx-rp select,.tx-rp input{height:26px;border:1px solid transparent;border-radius:6px;background:transparent;
+  .mc-rp button,.mc-rp select,.mc-rp input{height:26px;border:1px solid transparent;border-radius:6px;background:transparent;
     color:inherit;font:inherit;padding:0 8px;cursor:pointer;box-sizing:border-box}
-  .tx-rp select,.tx-rp input{background:var(--raised,#1d2a36);border-color:var(--line,#2b3946)}
-  .tx-rp button:hover{background:var(--raised,#1d2a36)}
-  .tx-rp button:disabled{opacity:.4;cursor:default}
-  .tx-rp button.on{background:var(--accent,#e3a33a);color:var(--accentInk,#1a1407)}
-  .tx-rp .tx-rp-info{color:var(--faint,#93a2af);padding:0 6px;white-space:nowrap;min-width:90px}
-  .tx-rp .tx-rp-sep{width:1px;height:18px;background:var(--line,#2b3946)}
-  .tx-rp [hidden]{display:none!important}`;
+  .mc-rp select,.mc-rp input{background:var(--raised,#1d2a36);border-color:var(--line,#2b3946)}
+  .mc-rp button:hover{background:var(--raised,#1d2a36)}
+  .mc-rp button:disabled{opacity:.4;cursor:default}
+  .mc-rp button.on{background:var(--accent,#e3a33a);color:var(--accentInk,#1a1407)}
+  .mc-rp .mc-rp-info{color:var(--faint,#93a2af);padding:0 6px;white-space:nowrap;min-width:90px}
+  .mc-rp .mc-rp-sep{width:1px;height:18px;background:var(--line,#2b3946)}
+  .mc-rp [hidden]{display:none!important}
+  .mc-bm{position:absolute;top:calc(100% + 6px);right:0;width:340px;max-width:90vw;padding:8px;border-radius:8px;
+    background:var(--panel,#16212b);border:1px solid var(--line,#2b3946);box-shadow:0 6px 20px rgba(0,0,0,.35);text-align:left}
+  .mc-bm-head{display:flex;gap:4px;margin-bottom:6px}
+  .mc-bm-head input{flex:1;min-width:0}
+  .mc-bm-list{max-height:260px;overflow:auto;display:flex;flex-direction:column;gap:2px}
+  .mc-bm-row{display:flex;align-items:center;gap:4px;padding:4px 6px;border-radius:6px;cursor:pointer}
+  .mc-bm-row:hover{background:var(--raised,#1d2a36)}
+  .mc-bm-main{flex:1;min-width:0}
+  .mc-bm-name{font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  .mc-bm-meta{color:var(--faint,#93a2af);font-size:11px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  .mc-bm-row button{height:22px;padding:0 5px}
+  .mc-bm-msg{color:var(--faint,#93a2af);font-size:11px;min-height:14px;margin-top:4px}
+  .mc-bm-empty{color:var(--faint,#93a2af);padding:6px}`;
   document.head.appendChild(css);
 
   const PRESETS = [["1 hour ago", 3600e3], ["3 hours ago", 3 * 3600e3], ["6 hours ago", 6 * 3600e3], ["1 day ago", 864e5],
@@ -27,7 +40,7 @@
   const msToPos = (ms) => Math.round(100 * Math.log(MAX_MS / ms) / Math.log(MAX_MS / MIN_MS));
   const posToMs = (p) => Math.round(MAX_MS * Math.pow(MIN_MS / MAX_MS, p / 100));
   const speedLabel = (ms) => { const r = 1000 / ms; return (r >= 10 ? Math.round(r) : Math.round(r * 10) / 10) + " bar/s"; };
-  const savedSpeed = (() => { try { const v = Number(localStorage.getItem("tradexReplaySpeed")); return v >= MIN_MS && v <= MAX_MS ? v : 1000; } catch (_) { return 1000; } })();
+  const savedSpeed = (() => { try { const v = Number(localStorage.getItem("madarReplaySpeed")); return v >= MIN_MS && v <= MAX_MS ? v : 1000; } catch (_) { return 1000; } })();
 
   let ws = null, bar = null, timer = null, speed = savedSpeed;
   const chart = () => { try { return (ws.active || ws).chart; } catch (_) { return null; } };
@@ -49,20 +62,27 @@
     ui.play = el("button", { textContent: "▶ Play", title: "Play / pause (Shift+Space)" });
     ui.slider = el("input", { type: "range", min: 0, max: 100, step: 1, value: msToPos(speed), title: "Replay speed (log scale)" });
     ui.slider.style.cssText = "width:110px;padding:0;accent-color:var(--accent,#e3a33a);cursor:pointer";
-    ui.slabel = el("span", { className: "tx-rp-info", textContent: speedLabel(speed) });
+    ui.slabel = el("span", { className: "mc-rp-info", textContent: speedLabel(speed) });
     ui.slabel.style.cssText = "min-width:58px;text-align:right;padding:0 2px";
     ui.chips = CHIPS.map((r) => el("button", { textContent: r + "x", title: r + " bar/s" }));
     ui.chips.forEach((b, i) => { b.dataset.ms = String(Math.round(1000 / CHIPS[i])); b.style.cssText = "padding:0 5px;min-width:0;font-size:11px"; });
     ui.speed = el("span", {}, [ui.slider, ui.slabel, ...ui.chips]);
     ui.speed.style.cssText = "display:flex;align-items:center;gap:2px";
     ui.stop = el("button", { textContent: "⏹ Exit", title: "Stop and return to live" });
-    ui.info = el("span", { className: "tx-rp-info" });
+    ui.info = el("span", { className: "mc-rp-info" });
+    ui.bm = el("button", { textContent: "🔖 Bookmarks", title: "Save and jump to named replay checkpoints (all symbols, with drawings)" });
+    ui.panel = el("div", { className: "mc-bm", hidden: true });
+    ui.bmName = el("input", { type: "text", placeholder: "Name this point (optional)", maxLength: 60 });
+    ui.bmSave = el("button", { textContent: "🔖 Save here", title: "Save the current replay position, symbol, timeframe and drawings" });
+    ui.bmList = el("div", { className: "mc-bm-list" });
+    ui.bmMsg = el("div", { className: "mc-bm-msg" });
+    ui.panel.append(el("div", { className: "mc-bm-head" }, [ui.bmName, ui.bmSave]), ui.bmList, ui.bmMsg);
     ui.setup = [ui.preset, ui.date, ui.start];
     ui.run = [ui.back, ui.step, ui.play, ui.speed, ui.stop, ui.info];
-    const sep = () => el("span", { className: "tx-rp-sep" });
-    bar = el("div", { className: "tx-rp" }, [ui.toggle, sep(), ui.cut, ...ui.setup, ...ui.run]);
-    bar.querySelector(".tx-rp-sep").hidden = true;
-    ui.sep = bar.querySelector(".tx-rp-sep");
+    const sep = () => el("span", { className: "mc-rp-sep" });
+    bar = el("div", { className: "mc-rp" }, [ui.toggle, sep(), ui.cut, ...ui.setup, ...ui.run, ui.bm, ui.panel]);
+    bar.querySelector(".mc-rp-sep").hidden = true;
+    ui.sep = bar.querySelector(".mc-rp-sep");
     bar.ui = ui;
     return bar;
   }
@@ -168,6 +188,88 @@
   function step() { const c = chart(); if (c && c.replay.state.active) { c.replay.pause(); c.replay.step(); refresh(); } }
   function stopReplay() { const c = chart(); if (c) c.replay.stop(); refresh(); }
 
+  // ---- Bookmarks: named checkpoints, global (every symbol), each with symbol, timeframe, replay bar, drawings and speed. ----
+  // "Last position" is saved automatically while a replay runs, so closing the app and coming back resumes where you were.
+  const BM_KEY = "madarReplayBookmarks", TF_CODE = { M1: "1", M5: "5", M15: "15", M30: "30", H1: "60", H4: "240", D1: "1D" };
+  const TF_NAME = Object.fromEntries(Object.entries(TF_CODE).map(([k, v]) => [v, k]));
+  const TF_SHORT = { M1: "1m", M5: "5m", M15: "15m", M30: "30m", H1: "1H", H4: "4H", D1: "D" };
+  const bmLoad = () => { try { const v = JSON.parse(localStorage.getItem(BM_KEY)); return Array.isArray(v) ? v : []; } catch (_) { return []; } };
+  const bmStore = (list) => { try { localStorage.setItem(BM_KEY, JSON.stringify(list)); } catch (_) { bmSay("Could not save (browser storage is full or blocked)"); } };
+  let jumping = false, lastAuto = 0, confirmId = null, renameId = null;
+  const bmSay = (t) => { if (bar) bar.ui.bmMsg.textContent = t || ""; };
+  const marketNow = () => { const c = chart(), m = c && c.market; return m ? { symbol: String(m.symbol).replace(/^lab:/, ""), tf: TF_NAME[String(m.timeframe)] || "M1" } : null; };
+  function snapshot(name, auto) {
+    const c = chart(), s = c && c.replay.state, m = marketNow();
+    if (!s || !s.active || !s.cursorTime || !m) return null;
+    let drawings = null; try { drawings = c.drawings.toJSON(); } catch (_) {}
+    return { id: auto ? "auto" : String(Date.now()) + Math.random().toString(36).slice(2, 5), auto: !!auto, name, symbol: m.symbol, tf: m.tf,
+      time: s.cursorTime, drawings, speed, created: Date.now() };
+  }
+  function autoSave() {
+    if (jumping || Date.now() - lastAuto < 2000) return;
+    const b = snapshot("Last position (auto)", true); if (!b) return;
+    lastAuto = Date.now();
+    const list = bmLoad().filter((x) => x.id !== "auto"); list.unshift(b); bmStore(list);
+  }
+  function bmSave() {
+    const name = bar.ui.bmName.value.trim();
+    const m = marketNow(), s = chart() && chart().replay.state;
+    const b = snapshot(name || `${m ? m.symbol : ""} ${m ? TF_SHORT[m.tf] : ""} ${s && s.cursorTime ? fmtUtc(s.cursorTime) : ""}`.trim(), false);
+    if (!b) { bmSay("Start a replay first, then save the point you stopped at."); return; }
+    const list = bmLoad(); const auto = list.filter((x) => x.id === "auto"); bmStore([...auto, b, ...list.filter((x) => x.id !== "auto")]);
+    bar.ui.bmName.value = ""; bmSay("Saved: " + b.name); bmRender();
+  }
+  const waitFor = (fn, ms) => new Promise((res) => { const t0 = Date.now(); (function poll() { let ok = false; try { ok = fn(); } catch (_) {} if (ok) res(true); else if (Date.now() - t0 > ms) res(false); else setTimeout(poll, 120); })(); });
+  async function bmJump(b) {
+    if (jumping) return; jumping = true; endCut(); bmSay("Jumping to " + b.name + " ...");
+    try {
+      let c = chart(), m = marketNow();
+      if (!m || m.symbol !== b.symbol || m.tf !== b.tf) {
+        if (c.replay.state.active) { c.replay.pause(); c.replay.stop(); }
+        if (!window.labChart || !window.labChart.setMarket) throw new Error("cannot switch market here");
+        window.labChart.setMarket(b.symbol, b.tf);
+        const ok = await waitFor(() => { const mm = marketNow(), bb = chart().replay.bounds; return mm && mm.symbol === b.symbol && mm.tf === b.tf && bb && bb.first <= b.time && bb.last >= b.time; }, 25000);
+        if (!ok) throw new Error("that bar is older than the loaded history of this symbol");
+        c = chart();
+      } else {
+        const bb = c.replay.bounds;
+        if (!bb || b.time < bb.first || b.time > bb.last) throw new Error("that bar is older than the loaded history");
+        if (c.replay.state.active) { c.replay.pause(); await c.replay.stop(); }
+      }
+      await c.replay.start({ from: b.time });
+      if (b.drawings) { try { c.drawings.fromJSON(b.drawings); } catch (e) { console.warn("restore drawings", e); } }
+      if (b.speed) bar.ui.slider.oninput && (bar.ui.slider.value = msToPos(b.speed), bar.ui.slider.oninput());
+      open = true; bmSay("Back at " + fmtUtc(b.time) + " (paused)."); refresh();
+    } catch (e) { bmSay("Could not jump: " + (e && e.message || e)); }
+    jumping = false; lastAuto = Date.now();
+  }
+  function bmRender() {
+    const u = bar.ui, list = bmLoad(), tz = (ms) => fmtUtc(ms);
+    u.bmList.textContent = "";
+    if (!list.length) { u.bmList.append(el("div", { className: "mc-bm-empty", textContent: "No bookmarks yet. Start a replay, then press Save here." })); return; }
+    for (const b of list) {
+      const nd = b.drawings && b.drawings.drawings ? b.drawings.drawings.length : 0;
+      const name = renameId === b.id
+        ? el("input", { type: "text", value: b.name, maxLength: 60 })
+        : el("div", { className: "mc-bm-name", textContent: (b.auto ? "⟲ " : "🔖 ") + b.name });
+      if (renameId === b.id) {
+        name.onclick = (e) => e.stopPropagation();
+        name.onkeydown = (e) => { e.stopPropagation(); if (e.key === "Enter") { const v = name.value.trim(); if (v) bmStore(bmLoad().map((x) => x.id === b.id ? { ...x, name: v } : x)); renameId = null; bmRender(); } else if (e.key === "Escape") { renameId = null; bmRender(); } };
+        setTimeout(() => name.focus(), 0);
+      }
+      const main = el("div", { className: "mc-bm-main" }, [name, el("div", { className: "mc-bm-meta", textContent: `${b.symbol} ${TF_SHORT[b.tf] || b.tf} · ${tz(b.time)}${nd ? ` · ${nd} drawing${nd > 1 ? "s" : ""}` : ""}` })]);
+      const row = el("div", { className: "mc-bm-row", title: "Jump here" }, [main]);
+      row.onclick = () => bmJump(b);
+      if (!b.auto) {
+        const ed = el("button", { textContent: "✎", title: "Rename" }); ed.onclick = (e) => { e.stopPropagation(); renameId = b.id; bmRender(); };
+        const rm = el("button", { textContent: confirmId === b.id ? "Delete?" : "✕", title: "Delete" });
+        rm.onclick = (e) => { e.stopPropagation(); if (confirmId === b.id) { confirmId = null; bmStore(bmLoad().filter((x) => x.id !== b.id)); } else { confirmId = b.id; setTimeout(() => { if (confirmId === b.id) { confirmId = null; bmRender(); } }, 2500); } bmRender(); };
+        row.append(ed, rm);
+      }
+      u.bmList.append(row);
+    }
+  }
+
   let open = false;
   function refresh() {
     if (!bar) return;
@@ -178,7 +280,10 @@
     u.date.hidden = u.date.hidden || u.preset.value !== "custom" || !open || active;
     if (open && !active && u.preset.value === "custom") u.date.hidden = false;
     u.run.forEach((e) => { e.hidden = !active; });
-    u.sep.hidden = u.cut.hidden = !(open || active);
+    u.sep.hidden = u.cut.hidden = u.bm.hidden = !(open || active);
+    if (!(open || active)) u.panel.hidden = true;
+    u.bmSave.disabled = !active;
+    if (active) autoSave();
     u.cut.textContent = active ? "✂ Re-cut" : "✂ Select bar";
     u.chips.forEach((b) => b.classList.toggle("on", Math.abs(Number(b.dataset.ms) - speed) <= 2));
     if (active) {
@@ -201,6 +306,10 @@
     u.preset.onchange = () => { u.date.hidden = u.preset.value !== "custom"; };
     hostEl = host;
     u.cut.onclick = beginCut;
+    u.bm.onclick = () => { u.panel.hidden = !u.panel.hidden; if (!u.panel.hidden) { bmSay(""); bmRender(); } };
+    u.bmSave.onclick = bmSave;
+    u.bmName.onkeydown = (e) => { e.stopPropagation(); if (e.key === "Enter") bmSave(); };
+    document.addEventListener("mousedown", (e) => { if (!u.panel.hidden && !bar.contains(e.target)) u.panel.hidden = true; });
     u.start.onclick = startReplay;
     u.step.onclick = step;
     u.back.onclick = stepBack;
@@ -210,7 +319,7 @@
       if (!isFinite(ms)) return;
       speed = Math.max(MIN_MS, Math.min(MAX_MS, ms));
       u.slider.value = msToPos(speed); u.slabel.textContent = speedLabel(speed);
-      try { localStorage.setItem("tradexReplaySpeed", String(speed)); } catch (_) {}
+      try { localStorage.setItem("madarReplaySpeed", String(speed)); } catch (_) {}
       const c = chart(); if (c && c.replay.state.playing) c.replay.play(speed);
     };
     u.slider.oninput = () => setSpeed(posToMs(Number(u.slider.value)));
@@ -224,5 +333,5 @@
     refresh();
   }
 
-  window.TradeXReplayBar = { mount };
+  window.MadarReplayBar = { mount };
 })();

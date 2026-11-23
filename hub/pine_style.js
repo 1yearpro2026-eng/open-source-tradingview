@@ -1,4 +1,4 @@
-// Pine "Style tab" for the TradeX (2026-11-13).
+// Pine "Style tab" for the Madar Chart (2026-11-13).
 // TradingView builds a Style tab by itself from every plot(): colour, thickness, show/hide. Vela's settings dialog
 // only shows the script's own input.*() calls, so TradingView built-ins (EMA, TEMA, MACD, ...) arrived with fixed
 // colours and no way to change them. This rewrite gives every plot()/hline() with a fixed colour real inputs in a

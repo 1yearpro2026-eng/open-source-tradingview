@@ -1,5 +1,5 @@
 <!doctype html>
-<html><head><meta charset="utf-8"><title>TradeX - Vela engine</title>
+<html><head><meta charset="utf-8"><title>Madar Chart - Vela engine</title>
 <style>
   html,body{margin:0;height:100%;background:#0f161d;color:#d6dee5;font:13px system-ui,Segoe UI,sans-serif}
   #top{display:flex;gap:8px;align-items:center;padding:6px 8px;border-bottom:1px solid #26333f;height:31px;box-sizing:border-box}
@@ -11,7 +11,7 @@
   .vela-ui-layer { z-index: 30; pointer-events: none; }
   .vela-ui-layer > * { pointer-events: auto; }
 </style></head><body>
-<div id="top"><b>TradeX</b> <span style="color:#93a2af">Vela engine</span>
+<div id="top"><b>Madar Chart</b> <span style="color:#93a2af">Vela engine</span>
   <select id="layout"><option value="">1 chart</option><option value="2h">2 side by side</option><option value="2v">2 stacked</option><option value="4">4 charts</option><option value="8">8 charts</option></select>
   <span style="color:#93a2af">Tips: type a letter for symbol search, a digit for timeframe, ? for all shortcuts. Drag pane borders to resize.</span>
   <button id="auto">Code trendline</button></div>
@@ -90,13 +90,13 @@ class HubPineEngine extends VelaLab.PineWorkerEngine {
     return super.execute(req, h);
   }
 }
-// Inside the TradeX, Vela's own "Indicators" button opens the hub's own Indicators dialog
+// Inside the Madar Chart, Vela's own "Indicators" button opens the hub's own Indicators dialog
 // (Vela native indicators + your own Pine scripts in one place).
 if (LabEmbedded && VelaLab.registerWidgetAction) {
   VelaLab.registerWidgetAction({ id: "indicators", target: "topbar", align: "left", label: "Indicators", icon: "indicators",
     run: () => window.parent.postMessage({ evt: "indicators:open" }, location.origin) });
 }
-// ---- Theme (TradeX settings) ----
+// ---- Theme (Madar Chart settings) ----
 // hexA() comes from theme.js
 function velaTheme() { const t = HubTheme; return { background: t.bg, textColor: t.text, gridColor: t.grid, borderColor: t.line, upColor: t.up, downColor: t.down, fontFamily: t.font }; }
 // Candle colours have one home: the hub's Settings panel. Inside the hub, Vela's own dialog hides its colour rows.
@@ -145,19 +145,19 @@ function build(layout) {
     bars: 10000,
     theme: velaTheme(), upColor: HubTheme.up, downColor: HubTheme.down,
     providers: { lab: () => provider }, persist: false,
-    // Inside the TradeX wrapper, symbol / timeframe / layout live in the wrapper's bar only (no duplicate controls).
+    // Inside the Madar Chart wrapper, symbol / timeframe / layout live in the wrapper's bar only (no duplicate controls).
     ...(LabEmbedded ? { topbar: { left: ["style", "indicators", "undo-redo"] } } : {}),
     // Pine Script runs in its own worker per chart (PineTS via @luxalgo/vela-pinets), so heavy scripts never freeze the chart.
     engines: { pine: () => new HubPineEngine() },
   });
   // Floating favourites bar for starred drawing tools (drawing_favbar.js).
-  try { TradeXFavBar.mount(ws, host); } catch (e) { console.warn("favourites bar", e); }
+  try { MadarFavBar.mount(ws, host); } catch (e) { console.warn("favourites bar", e); }
   // Bar Replay controls (replay_bar.js).
-  try { TradeXReplayBar.mount(ws, host); } catch (e) { console.warn("replay bar", e); }
-  try { TradeXAutoFit.mount(ws); } catch (e) { console.warn("order-flow auto fit", e); }
+  try { MadarReplayBar.mount(ws, host); } catch (e) { console.warn("replay bar", e); }
+  try { MadarAutoFit.mount(ws); } catch (e) { console.warn("order-flow auto fit", e); }
   // Colour every chart once its first history is in (the volume indicator mounts with the data).
   setTimeout(applyTheme, 1500);
-  // Tell the TradeX shell when the symbol or timeframe is changed inside Vela.
+  // Tell the Madar Chart shell when the symbol or timeframe is changed inside Vela.
   ws.chart.on("market:changed", ({ symbol, timeframe }) => {
     // Remember the current market, so a layout rebuild opens on it (not on the first symbol).
     if (symbol) window.LabDefaultSymbol = String(symbol).replace(/^lab:/, "");

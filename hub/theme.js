@@ -1,4 +1,4 @@
-// TradeX theme: presets + the user's own overrides (Settings panel), shared by the wrapper and all engines.
+// Madar Chart theme: presets + the user's own overrides (Settings panel), shared by the wrapper and all engines.
 // Saved in localStorage "chartHubTheme" (same origin, so every engine iframe reads the same settings).
 window.HubPresets = {
   graphite: { label: "Graphite & amber", mode: "dark",   // chosen 2026-11-02 (_design/concepts/A_graphite_amber_1.jpg)

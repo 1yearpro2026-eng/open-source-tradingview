@@ -1,4 +1,4 @@
-// TradeX: Backend log terminal. One merged, live, UTC view of the whole trading backend (logbus.py, /api/logs).
+// Madar Chart: Backend log terminal. One merged, live, UTC view of the whole trading backend (logbus.py, /api/logs).
 // Loaded after hub.html's inline script; plugs into PANELS and the rail by itself.
 (() => {
   const css = document.createElement("style");

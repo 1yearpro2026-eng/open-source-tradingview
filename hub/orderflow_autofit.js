@@ -1,4 +1,4 @@
-// TradeX: auto-fit the chart when an order-flow chart type is picked (2026-11-16).
+// Madar Chart: auto-fit the chart when an order-flow chart type is picked (2026-11-16).
 // Footprint numbers, profiles and TPO letters are unreadable at a normal candle zoom, so each type gets its own view:
 //   Volume footprint        ~110 px per candle (8-16 candles across), price axis fitted: the numbers in the cells read clearly
 //   Session volume profile  2-3 whole sessions across (a day or two on 15m), so each profile has room to spread out
@@ -65,10 +65,10 @@
     ws = workspace; saved.clear(); fittedKey.clear();
     if (!ws || !ws.on) return;
     ws.on("cell:priceStyle", (e) => onStyle(e.id, e.from, e.to));
-    const hook = (c) => { const ch = chartOf(c); if (ch && ch.on && !ch.__txFit) { ch.__txFit = true; ch.on("history:complete", () => setTimeout(() => onLoaded(c.id), 80)); } };
+    const hook = (c) => { const ch = chartOf(c); if (ch && ch.on && !ch.__mcFit) { ch.__mcFit = true; ch.on("history:complete", () => setTimeout(() => onLoaded(c.id), 80)); } };
     (ws.cells ? ws.cells() : [ws.active]).forEach(hook);
     ws.on("cell:created", (e) => setTimeout(() => hook(cellOf(e && (e.id || e))), 0));
   }
 
-  window.TradeXAutoFit = { mount, fit: (style) => ws && fit(ws.active.id, style || styleOf(chartOf(ws.active))) };
+  window.MadarAutoFit = { mount, fit: (style) => ws && fit(ws.active.id, style || styleOf(chartOf(ws.active))) };
 })();

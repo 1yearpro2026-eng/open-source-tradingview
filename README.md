@@ -1,104 +1,37 @@
-# TradeX (The Open Source TradingView)
+# Madar Chart (مدار چارت)
 
-TradeX is a free, self-hosted, TradingView-style charting app that runs on your own computer.
-It puts one interface over several free market-data feeds and three chart engines. It runs Pine Script
-indicators and can also show candles from your own MetaTrader 5 terminal, on this PC or on a VPS.
-
-> Not affiliated with, endorsed by, or connected to TradingView, Inc. "TradingView" is their trademark.
-> This project is an independent open-source tool. It is not financial advice.
-
-![TradeX: gold on the free Deriv feed, Vela engine](docs/screenshots/01_hub_vela_gold.png)
-
-| Four synced charts + favourite drawing tools | Indicators dialog |
-|---|---|
-| ![4 chart layout](docs/screenshots/02_four_chart_layout.png) | ![Indicators](docs/screenshots/03_indicators_dialog.png) |
-| **KLineChart engine** | **Themes, fonts and candle colours** |
-| ![KLineChart](docs/screenshots/04_klinechart_engine.png) | ![Settings](docs/screenshots/06_settings_themes.png) |
-| **Order flow: session volume profile (real Binance trades)** | **Floating favourite-tools bar** |
-| ![Order flow](docs/screenshots/07_order_flow_profile.png) | ![Favourites bar](docs/screenshots/08_favourites_bar.png) |
+A free, local charting app that runs on your own computer. One interface over free market-data feeds, with a Vela chart
+engine, drawing tools, indicators, Pine Script and a Bar Replay.
 
 ## What it does
 
-- **Free feeds, no account needed:** Deriv (forex, gold, indices, crypto), Bybit (about 3,300 crypto
-  and metal markets) and Binance (crypto). They work out of the box.
-- **Your own MetaTrader 5 (optional):**
-  - **Local MT5:** a terminal on this Windows PC (any broker).
-  - **Remote MT5:** a terminal on a VPS or cloud server, reached through an SSH tunnel and a small bridge
-    (`bridge/mt5_bridge.py`). The bridge only reads candles. It never places orders.
-- **The broker switch keeps the instrument.** Gold stays gold when you move from Deriv to Bybit to MT5.
-  Only exact matches are joined, so gold tokens such as PAXG are kept separate from gold spot.
-- **Three chart engines, one switch:** Vela (main engine, with Pine Script, 79 native indicators, 79 drawing
-  tools and layouts of up to 8 synced charts), Lightweight Charts with 86 drawing tools, and KLineChart Pro.
-- **Deep history:** Vela loads 10,000 candles per chart (more in chart settings > Advanced), and fills any gap
-  left by sleep or a reconnect before the next live candle.
-- **Favourite drawing tools:** star a tool in the drawing toolbar and it appears on a small floating bar over the
-  chart, like TradingView. Drag the bar by its grip, double-click the grip to turn it vertical. Stars and position
-  are remembered.
-- **Order flow (Vela chart types):** volume footprint, session volume profile and TPO, plus a delta indicator.
-  Crypto and gold use real Binance futures trades with the buyer/seller side; other symbols get a labelled
-  estimate from the chart's own candles. Deriv candles have no volume, so use Bybit, Binance or MT5 for order flow.
-- **Pine Script:** write or import your own scripts in the Pine Editor. Scripts written for v1 to v4 are
-  converted to v5 automatically and the original is kept. Converted values are not verified
-  against any reference yet, so check them before you rely on them.
-- **Backend log panel:** one live, redacted view of every feed: reconnects, lag, silent streams.
-- **Safe by default:** binds to `127.0.0.1` only and serves only a whitelist of static files. With nothing
-  configured, it never opens an SSH link.
+- **Free feeds, no account:** Deriv (forex, gold, indices, crypto), Bybit (about 3,300 crypto and metal markets) and
+  Binance (crypto).
+- **The broker switch keeps the instrument.** Gold stays gold when you move between feeds.
+- **Chart engine:** Vela, with 79 native indicators, 79 drawing tools and layouts of synced charts.
+- **Bar Replay:** cut the chart at any candle with the scissors, then step, play at 0.2 to 100 bars per second, go back,
+  or re-cut.
+- **Order flow:** footprint, session volume profile, TPO and delta (real Binance trades for crypto and gold).
+- **Pine Script:** write or import scripts in the Pine Editor.
+- **Backend log panel:** one live view of every feed.
+- **Local only:** binds to `127.0.0.1` and serves a whitelist of static files.
 
-## Quick start
+## Run it
 
-Requirements: Python 3 (tested on 3.14). Node.js is not needed to run it; the built bundle is included.
+Needs Python 3.
 
 ```bash
-git clone https://github.com/saifullahshafin/open-source-tradingview.git
-cd open-source-tradingview
-python -m venv .venv
-# Windows: .venv\Scripts\activate      macOS/Linux: source .venv/bin/activate
-pip install -r requirements.txt
-cp .env.example .env        # optional: only needed for MT5
-python hub/server.py
+sh start.sh          # macOS / Linux  (Windows: start.bat)
 ```
 
-Then open <http://localhost:8770/hub.html>. On Windows you can double-click `start.bat` instead.
+Then open <http://localhost:8770/hub.html>. Settings (ports, log files) are in `.env`, copied from `.env.example`.
 
-## Connect MetaTrader 5 (optional)
-
-**MT5 on this Windows PC:** install MetaTrader 5, log in to your account, then run `pip install MetaTrader5`
-and set `LOCAL_MT5=1` in `.env`. A "Local MT5" feed appears.
-
-**MT5 on a VPS or server:** step-by-step instructions are in [AGENTS.md](AGENTS.md#remote-mt5-on-a-vps). In short:
-1. On the server: run MT5, enable its MCP server (Tools > Options), then start
-   `MT5_MCP_TOKEN=... python3 bridge/mt5_bridge.py`. It listens on `127.0.0.1:8797` only.
-2. On your PC: add the server to `~/.ssh/config` (key login) and set `REMOTE_MT5_SSH_HOST=<alias>` in `.env`.
-3. Restart the hub. It opens the SSH tunnel itself and reconnects if the link drops. A "Remote MT5" feed appears.
-
-## Let your AI agent set it up
-
-[AGENTS.md](AGENTS.md) is written for coding agents (Claude Code, Codex, Cursor and similar). It gives the exact
-install, run and check steps for every setup (free feeds, local MT5, VPS MT5), the expected outputs, and the
-security rules. Point your agent at it: *"Read AGENTS.md and set this up for me."*
-
-## Project layout
+## Layout
 
 ```
-hub/        the app: server.py (data + web server), hub.html (the shell), engine pages, Pine tools
-bridge/     mt5_bridge.py: read-only candle bridge for a remote MT5 terminal
-build/      source and build script for hub/vela.bundle.js and hub/vendor (npm)
-docs/       screenshots
-licenses/   third-party licence and notice files
+hub/        server.py (feeds, HTTP, WebSocket), hub.html (shell), vela.html (chart), replay_bar.js, order flow, Pine
+build/      builds hub/vela.bundle.js (see THIRD_PARTY_NOTICES.md)
+licenses/   third-party licence texts
 ```
 
-## Roadmap
-
-- Price and Pine alerts (built privately, not yet ported to run without a server)
-- Accuracy tests: candles against the broker, Pine values against reference values
-- Pine Script on the Lightweight and KLineChart engines (today an indicator stays on and draws when you switch
-  back to Vela; adding one while on another engine switches to Vela)
-- Drawings that carry across engines
-
-## Licence
-
-**AGPL-3.0-only** (see [LICENSE](LICENSE)), because the bundled Pine Script engine
-([PineTS](https://github.com/LuxAlgo/PineTS) and [Vela-pinets](https://github.com/LuxAlgo/Vela-pinets)) is AGPL-3.0. If you run a
-modified version for other people over a network, you must offer them its source.
-Third-party parts keep their own licences. See [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md).
-Market data belongs to its providers. Check each feed's terms before any public or commercial use.
+Licence: AGPL-3.0 (see LICENSE). Third-party components are listed in THIRD_PARTY_NOTICES.md.

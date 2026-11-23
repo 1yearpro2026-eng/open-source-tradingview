@@ -20,7 +20,7 @@ BASE = "https://data.binance.vision/data/futures/um/daily"
 
 
 def _get(url: str, timeout: int = 120) -> bytes:
-    req = urllib.request.Request(url, headers={"User-Agent": "tradex/1.0"})
+    req = urllib.request.Request(url, headers={"User-Agent": "madar/1.0"})
     with urllib.request.urlopen(req, timeout=timeout) as r:
         return r.read()
 

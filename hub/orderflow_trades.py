@@ -1,4 +1,4 @@
-"""Every Binance futures trade for the footprint chart, loaded fast and kept (TradeX, 2026-11-15).
+"""Every Binance futures trade for the footprint chart, loaded fast and kept (Madar Chart, 2026-11-15).
 
 Past UTC days come from data.binance.vision daily files (downloaded in the background, cached as parquet).
 Recent hours come from the REST aggTrades list: newest gaps first, one shared weight budget for the whole server,
@@ -59,7 +59,7 @@ class _Weight:
 
     def get(self, url, w, timeout=20, low=False):
         self.take(w, low)
-        req = urllib.request.Request(url, headers={"User-Agent": "tradex/1.0"})
+        req = urllib.request.Request(url, headers={"User-Agent": "madar/1.0"})
         try:
             with urllib.request.urlopen(req, timeout=timeout) as r:
                 u = r.headers.get("X-MBX-USED-WEIGHT-1M")

@@ -1,4 +1,4 @@
-// TradeX indicators, part 2: the "Indicators, metrics, and strategies" dialog.
+// Madar Chart indicators, part 2: the "Indicators, metrics, and strategies" dialog.
 // Left: Personal (Favorites, My scripts, On chart) / Built-in (Vela native). Right: list. Clicking a row adds it to the chart.
 // Your own Pine Script (v1-v6) comes in through the Pine Editor ("My scripts").
 const SECTIONS = [

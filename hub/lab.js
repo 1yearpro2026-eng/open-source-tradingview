@@ -1,5 +1,5 @@
 // Shared by every chart page: same feed, same lag meter, so the comparison is fair.
-// Inside the TradeX wrapper (?embed=1) the shell owns symbol, broker, timeframe, layout, theme and the status bar;
+// Inside the Madar Chart wrapper (?embed=1) the shell owns symbol, broker, timeframe, layout, theme and the status bar;
 // the page shows only its chart and its own drawing tools.
 window.LabEmbedded = new URLSearchParams(location.search).get("embed") === "1" && window.parent !== window;
 if (LabEmbedded) {
@@ -34,7 +34,7 @@ window.LabFeed = (() => {
       const r = await fetch(u);
       const j = await r.json();
       if (!Array.isArray(j)) throw new Error(j.error || "history failed");
-      say({ bars: j.length });  // TradeX lifts its "Loading" cover only after the new ticker's candles arrived
+      say({ bars: j.length });  // Madar Chart lifts its "Loading" cover only after the new ticker's candles arrived
       return j; // time in epoch seconds
     } catch (e) { say({ error: String(e.message || e) }); throw e; }
   }
@@ -87,23 +87,20 @@ window.LabFeed = (() => {
 })();
 
 // Markets available without a login (Binance public feed). Forex and broker gold arrive with MT5.
-// The list comes from the server: every forex pair and commodity at your MT5 broker (when logged in),
-// plus crypto from Binance. Loaded synchronously so every page can build its menus at once.
+// The list comes from the server: Deriv and Bybit markets plus crypto from Binance. Loaded synchronously so every page can build its menus at once.
 window.LabSymbols = (() => {
   try {
     const x = new XMLHttpRequest(); x.open("GET", "/api/symbols", false); x.send();
-    const j = JSON.parse(x.responseText); window.LabMT5Status = j.mt5; window.LabARMStatus = j.arm; window.LabWsPort = j.ws_port;
-    if (j.arm !== "ok" && j.arm !== "off") console.warn("Remote MT5 unavailable:", j.arm);
-    if (j.mt5 !== "ok" && j.mt5 !== "off") console.warn("Local MT5 unavailable:", j.mt5);
+    const j = JSON.parse(x.responseText); window.LabWsPort = j.ws_port;
     return j.symbols;
   } catch (e) {
     return [{ ticker: "BTCUSD", name: "Bitcoin", source: "binance", group: "crypto" }];
   }
 })();
 window.srcOf = (t) => { const s = LabSymbols.find((x) => x.ticker === t); return s ? s.source : "binance"; };
-window.LabDefaultSymbol = (LabSymbols.find((s) => s.ticker === "RMT_XAUUSD") || LabSymbols.find((s) => s.ticker === "frxXAUUSD") || LabSymbols.find((s) => /^XAUUSD/.test(s.ticker) && s.source === "mt5") || LabSymbols.find((s) => s.ticker === "BTCUSD")).ticker;
+window.LabDefaultSymbol = (LabSymbols.find((s) => s.ticker === "frxXAUUSD") || LabSymbols.find((s) => s.ticker === "BTCUSD")).ticker;
 
-// TradeX: the shell opens a page as hub-frame with ?symbol=&tf=&embed=1, sends {cmd:"set"} to switch,
+// Madar Chart: the shell opens a page as hub-frame with ?symbol=&tf=&embed=1, sends {cmd:"set"} to switch,
 // and the page reports user changes back with LabNotify (only when embedded).
 window.LabParams = new URLSearchParams(location.search);
 if (LabParams.get("symbol") && LabSymbols.some((s) => s.ticker === LabParams.get("symbol"))) window.LabDefaultSymbol = LabParams.get("symbol");

@@ -11,7 +11,7 @@
   const rgba = (hex, a) => { const h = String(hex || "#888").replace("#", ""); const n = parseInt(h.length === 3 ? h.split("").map((c) => c + c).join("") : h.slice(0, 6), 16); return `rgba(${n >> 16 & 255},${n >> 8 & 255},${n & 255},${a})`; };
   const fmt = (v) => { const a = Math.abs(v); return a >= 1e6 ? (v / 1e6).toFixed(2) + "M" : a >= 1e4 ? (v / 1e3).toFixed(1) + "K" : a >= 100 ? Math.round(v) + "" : a >= 10 ? v.toFixed(1) : v.toFixed(2); };
   const ticker = (h) => String(h.symbol).replace(/^[a-z]+:/i, "");
-  const feedOf = (t) => (window.srcOf ? srcOf(t) : "arm");
+  const feedOf = (t) => (window.srcOf ? srcOf(t) : "deriv");
 
   // ================= Volume footprint =================
   const FP = "volume_footprint";
