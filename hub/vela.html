@@ -27,6 +27,7 @@
 <script src="orderflow_tpo_type.js"></script>
 <script src="drawing_favbar.js"></script>
 <script src="orderflow_autofit.js"></script>
+<script src="replay_bar.js"></script>
 <script>
 let lastBars = [];
 const provider = {
@@ -151,6 +152,8 @@ function build(layout) {
   });
   // Floating favourites bar for starred drawing tools (drawing_favbar.js).
   try { TradeXFavBar.mount(ws, host); } catch (e) { console.warn("favourites bar", e); }
+  // Bar Replay controls (replay_bar.js).
+  try { TradeXReplayBar.mount(ws, host); } catch (e) { console.warn("replay bar", e); }
   try { TradeXAutoFit.mount(ws); } catch (e) { console.warn("order-flow auto fit", e); }
   // Colour every chart once its first history is in (the volume indicator mounts with the data).
   setTimeout(applyTheme, 1500);
