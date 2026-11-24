@@ -43,7 +43,15 @@ window.LabFeed = (() => {
 
   // Live candle updates. onBar(bar) gets {time(sec),open,high,low,close,volume}.
   function live(symbol, tf, onBar, source) {
-    if (window.MadarAndroid) return () => {};   // no WebSocket server on the device; live candles arrive with Batch 3
+    if (window.MadarAndroid) {                    // the app: the native side owns the sockets and calls __madarBar(id, bar)
+      const id = (window.__madarSeq = (window.__madarSeq || 0) + 1);
+      const cbs = (window.__madarLive = window.__madarLive || {});
+      window.__madarBar = window.__madarBar || ((i, bar) => { const f = window.__madarLive[i]; if (f) f(bar); });
+      window.__madarNote = window.__madarNote || ((i, msg) => { stats.status = msg; });
+      cbs[id] = (bar) => { const now = Date.now(); stats.status = ""; stats.updates++; stats.lastAt = now; if (!stats.firstBarAt) stats.firstBarAt = now; onBar(bar); };
+      try { window.MadarNative.subscribe(id, source, symbol, tf); } catch (e) { stats.status = "live feed unavailable: " + e; }
+      return () => { try { window.MadarNative.unsubscribe(id); } catch (_) {} delete cbs[id]; };
+    }
     source = source || window.srcOf(symbol);
     const ws = new WebSocket(wsUrl());
     ws.onopen = () => ws.send(JSON.stringify({ source, symbol, tf }));

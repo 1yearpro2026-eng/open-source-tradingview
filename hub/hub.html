@@ -336,7 +336,11 @@ const fmtBytes = (b) => b > 1048576 ? (b / 1048576).toFixed(1) + " MB" : Math.ma
 const fmtDay = (t) => new Date(t * 1000).toISOString().slice(0, 10);
 const TF_LABEL = { M1: "1m", M5: "5m", M15: "15m", M30: "30m", H1: "1H", H4: "4H", D1: "D" };
 const DEPTH_HELP = { light: "light: 1m 30 days, 5m 6 months, up to 10 years on D", standard: "standard: 1m 90 days, 5m 1 year, up to 20 years on D", deep: "deep: 1m 1 year, 5m 3 years (slower, bigger)" };
-async function offPost(path, body) { return (await fetch("/api/offline/" + path, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body || {}) })).json(); }
+async function offPost(path, body) {
+  // The Android WebView never hands request bodies to the native side, so the app takes the same call as GET with the JSON in ?data=.
+  if (window.MadarAndroid) return (await fetch("/api/offline/" + path + "?data=" + encodeURIComponent(JSON.stringify(body || {})))).json();
+  return (await fetch("/api/offline/" + path, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body || {}) })).json();
+}
 async function offPoll() {
   let n; try { n = await (await fetch("/api/offline/status")).json(); } catch (_) { return; }
   const sig = JSON.stringify(n), changed = sig !== offSig; offSig = sig; offData = n;

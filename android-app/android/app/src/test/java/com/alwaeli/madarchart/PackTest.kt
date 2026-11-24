@@ -14,7 +14,10 @@ import org.junit.Test
  */
 class PackTest {
     private val store = PackStore(JdbcPackDb(File("src/main/assets/madar_pack.db")))
-    private val api = ApiHandler(store)
+    private class MemText : TextStore { val m = HashMap<String, String>(); override fun read(name: String) = m[name]; override fun write(name: String, text: String) { m[name] = text } }
+    private val feeds = Feeds(FixtureHttp(), FixtureDeriv())
+    // Local-only mode: every answer comes from the pack, like in the first builds
+    private val api = ApiHandler(BarService(store, SqlUserDb(JdbcSql()), feeds, MemSettings(true)), SymbolBook(feeds, MemText()) { store.symbolRows() })
     private val golden = JSONObject(javaClass.getResource("/pack_golden.json")!!.readText()).getJSONArray("series")
 
     private fun get(path: String, vararg q: Pair<String, String>) = api.handle("GET", path, q.toMap())
@@ -77,7 +80,7 @@ class PackTest {
         val o = a.getJSONObject(0)
         for (k in listOf("open", "high", "low", "close")) { val v = o.getDouble(k); assertTrue(k, v > 1.0 && v < 1.5) }
         val text = String(get("/api/bars", "source" to "local", "symbol" to "LOC_EURUSD", "tf" to "M1", "limit" to "1").body)
-        assertTrue(text, Regex("\"open\":1\\.\\d{5}[,}]").containsMatchIn(text))      // exactly five decimals for EURUSD
+        assertTrue(text, Regex("\"open\":1\\.\\d{1,5}[,}]").containsMatchIn(text))      // at most five decimals, no float noise like 1.1328800000000001
     }
 
     @Test fun listsComeFromThePack() {
@@ -97,6 +100,6 @@ class PackTest {
         assertEquals(400, get("/api/bars", "source" to "deriv", "symbol" to "frxXAUUSD", "tf" to "M7").status)
         assertEquals(404, get("/api/nothing").status)
         assertEquals(501, api.handle("POST", "/api/offline/mode", emptyMap()).status)
-        assertEquals(503, ApiHandler(null).handle("GET", "/api/bars", emptyMap()).status)
+        assertEquals(503, ApiHandler(null, null).handle("GET", "/api/bars", emptyMap()).status)
     }
 }

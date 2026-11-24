@@ -23,6 +23,46 @@ class PackStore(private val db: PackDb) {
     fun sources(): List<String> = series.map { it.source }.distinct()
     fun hasSeries(source: String, ticker: String, tf: String) = byKey.containsKey(Triple(source, ticker, tf))
 
+    /** The same query as barsJson, as arrays of doubles (prices are exact decimals: scaled integer / 10^digits). null = unknown series. */
+    fun readBars(source: String, ticker: String, tf: String, toSec: Long?, limit: Int): Bars? {
+        val s = byKey[Triple(source, ticker, tf)] ?: return null
+        val span = (tfSeconds(tf) * BARS_PER_CHUNK).toLong()
+        val parts = ArrayList<Decoded>()
+        var have = 0
+        var startMax = if (toSec == null) Long.MAX_VALUE else Math.floorDiv(toSec, span) * span
+        loop@ while (have < limit) {
+            val rows = db.chunksBefore(s.id, startMax, 4)
+            if (rows.isEmpty()) break
+            for (r in rows) {
+                val d = Codec.decode(r.data, r.count, r.first)
+                val keep = if (toSec == null) d.n else upperBound(d.t, toSec)
+                if (keep > 0) { parts.add(if (keep == d.n) d else slice(d, keep)); have += keep }
+                startMax = r.start - 1
+                if (have >= limit) break@loop
+            }
+        }
+        val total = minOf(have, limit)
+        var skip = have - total
+        val scale = pow10(s.digits).toDouble(); val vs = s.vscale.toDouble()
+        val t = LongArray(total); val o = DoubleArray(total); val h = DoubleArray(total); val l = DoubleArray(total); val c = DoubleArray(total); val v = DoubleArray(total)
+        var k = 0
+        for (d in parts.asReversed()) for (i in 0 until d.n) {
+            if (skip > 0) { skip--; continue }
+            t[k] = d.t[i]; o[k] = d.o[i] / scale; h[k] = d.h[i] / scale; l[k] = d.l[i] / scale; c[k] = d.c[i] / scale; v[k] = d.v[i] / vs; k++
+        }
+        return Bars(t, o, h, l, c, v)
+    }
+
+    /** Symbol rows the pack was built with (names, groups, digits), used when no feed list is available yet. */
+    fun symbolRows(): List<SymbolRow> = try {
+        val arr = org.json.JSONObject(db.meta("symbols_json") ?: "{}").optJSONArray("symbols") ?: org.json.JSONArray()
+        (0 until arr.length()).map { SymbolRow.fromJson(arr.getJSONObject(it)) }
+    } catch (e: Exception) { emptyList() }
+
+    fun assets(): List<AssetInfo> = series.groupBy { it.source to it.ticker }.map { (k, list) ->
+        AssetInfo(k.first, k.second, list.associate { it.tf to TfInfo(it.count, it.first, it.last) }, list.sumOf { db.bytesOf(it.id) })
+    }
+
     /** Newest `limit` candles with time <= toSec (all if null), oldest first, as the JSON array the web UI expects. null = unknown series. */
     fun barsJson(source: String, ticker: String, tf: String, toSec: Long?, limit: Int): String? {
         val s = byKey[Triple(source, ticker, tf)] ?: return null
