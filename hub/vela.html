@@ -230,7 +230,27 @@ window.labChart = {
       return res;
     } catch (e) { return { ok: false, error: String(e.message || e) }; }
   },
-  setMarket: (symbol, tf) => (window.LabDefaultSymbol = symbol, window.LabDefaultTF = tf || LabDefaultTF, ws.chart.setMarket({ symbol: "lab:" + symbol, timeframe: VELA_TF[tf] || "1" })),
+  setMarket: (symbol, tf) => {
+    const prevSym = window.LabDefaultSymbol, prevTf = window.LabDefaultTF;
+    window.LabDefaultSymbol = symbol; window.LabDefaultTF = tf || LabDefaultTF;
+    const req = { symbol: "lab:" + symbol, timeframe: VELA_TF[tf] || "1" };
+    // Same market, other timeframe: stay where you were looking. The centre time and the number of candles on screen are kept;
+    // only when the chart was at the live edge does it open at the end as usual.
+    try {
+      const sameMarket = symbol === prevSym && tf && prevTf && tf !== prevTf && LabTF.sec[tf] && LabTF.sec[prevTf];
+      const vr = sameMarket && (ws.active || ws).chart.rendererPort.getVisibleRange();
+      if (vr && lastBars.length) {
+        const oldStep = LabTF.sec[prevTf] * 1000, step = LabTF.sec[tf] * 1000;
+        const atEnd = vr.to >= lastBars[lastBars.length - 1].time - 3 * oldStep;
+        if (!atEnd) {
+          const mid = (vr.from + vr.to) / 2, half = Math.max(20, (vr.to - vr.from) / oldStep) * step / 2;
+          req.visibleRange = { from: Math.round(mid - half), to: Math.round(mid + half) };
+          req.bars = Math.min(5000, Math.ceil((Date.now() - req.visibleRange.from) / step) + 50);
+        }
+      }
+    } catch (e) { console.warn("keep position", e); }
+    return ws.chart.setMarket(req);
+  },
   setTF: (t) => ws.chart.setTimeframe ? ws.chart.setTimeframe({ M1: "1", M5: "5", M15: "15", M30: "30", H1: "60", H4: "240", D1: "1D" }[t]) : null,
   addCodeTrendline,
   drawingCount: () => { try { return ws.chart.drawings.list().length; } catch (_) { return -1; } },

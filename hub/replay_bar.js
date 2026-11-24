@@ -16,7 +16,7 @@
   .mc-rp button.on{background:var(--accent,#e3a33a);color:var(--accentInk,#1a1407)}
   .mc-rp .mc-rp-info{color:var(--faint,#93a2af);padding:0 6px;white-space:nowrap;min-width:90px}
   .mc-rp .mc-rp-sep{width:1px;height:18px;background:var(--line,#2b3946)}
-  .mc-rp [hidden]{display:none!important}
+  .mc-rp [hidden],.mc-rp[hidden]{display:none!important}
   .mc-bm{position:absolute;top:calc(100% + 6px);right:0;width:340px;max-width:90vw;padding:8px;border-radius:8px;
     background:var(--panel,#16212b);border:1px solid var(--line,#2b3946);box-shadow:0 6px 20px rgba(0,0,0,.35);text-align:left}
   .mc-bm-head{display:flex;gap:4px;margin-bottom:6px}
@@ -47,14 +47,12 @@
   }`;
   document.head.appendChild(css);
 
-  const PRESETS = [["1 hour ago", 3600e3], ["3 hours ago", 3 * 3600e3], ["6 hours ago", 6 * 3600e3], ["1 day ago", 864e5],
-    ["3 days ago", 3 * 864e5], ["1 week ago", 7 * 864e5], ["Oldest loaded bar", -1]];
-  // Speed = bars per second, on a log slider from 0.2 bar/s (5 s per bar) to 100 bars/s (10 ms per bar), plus quick chips.
-  const MIN_MS = 10, MAX_MS = 5000;
-  const CHIPS = [0.5, 1, 2, 5, 10, 25, 50, 100];
+  // Speed = bars per second, on a log slider from 0.05 bar/s (20 s per bar) to 100 bars/s (10 ms per bar), plus quick chips.
+  const MIN_MS = 10, MAX_MS = 20000;
+  const CHIPS = [0.05, 0.1, 0.2, 0.3, 0.4, 0.5, 1, 2, 5, 10, 25, 50, 100];
   const msToPos = (ms) => Math.round(100 * Math.log(MAX_MS / ms) / Math.log(MAX_MS / MIN_MS));
   const posToMs = (p) => Math.round(MAX_MS * Math.pow(MIN_MS / MAX_MS, p / 100));
-  const speedLabel = (ms) => { const r = 1000 / ms; return (r >= 10 ? Math.round(r) : Math.round(r * 10) / 10) + " bar/s"; };
+  const speedLabel = (ms) => { const r = 1000 / ms; return (r >= 10 ? Math.round(r) : r >= 1 ? Math.round(r * 10) / 10 : Math.round(r * 100) / 100) + " bar/s"; };
   const savedSpeed = (() => { try { const v = Number(localStorage.getItem("madarReplaySpeed")); return v >= MIN_MS && v <= MAX_MS ? v : 1000; } catch (_) { return 1000; } })();
 
   // Moves inside each candle (replay_motion.js): 0 = off (the candle appears whole), else 8 ... 240 moves per candle.
@@ -70,12 +68,8 @@
 
   function build() {
     const ui = {};
-    ui.toggle = el("button", { textContent: "⏪ Replay", title: "Bar Replay" });
     ui.cut = el("button", { textContent: "✂ Select bar", title: "Click a bar on the chart to start the replay from there (Esc cancels)" });
-    ui.preset = el("select", { title: "Start point" }, PRESETS.map(([l, v]) => el("option", { textContent: l, value: v })));
-    ui.preset.append(el("option", { textContent: "Pick date/time…", value: "custom" }));
-    ui.date = el("input", { type: "datetime-local", hidden: true, title: "Start date/time (your local time)" });
-    ui.start = el("button", { textContent: "Start", title: "Start replay from the chosen point" });
+    ui.close = el("button", { textContent: "✕", title: "Close Replay" });
     ui.back = el("button", { textContent: "⏮ Back", title: "Go back one bar" });
     ui.step = el("button", { textContent: "⏭ Step", title: "Next bar (Shift+→)" });
     ui.move = el("button", { textContent: "▸ Move", title: "One move inside the candle", hidden: true });
@@ -100,12 +94,9 @@
     ui.bmList = el("div", { className: "mc-bm-list" });
     ui.bmMsg = el("div", { className: "mc-bm-msg" });
     ui.panel.append(el("div", { className: "mc-bm-head" }, [ui.bmName, ui.bmSave]), ui.bmList, ui.bmMsg);
-    ui.setup = [ui.preset, ui.date, ui.start];
+    ui.setup = [ui.close];
     ui.run = [ui.back, ui.step, ui.move, ui.play, ui.motion, ui.speed, ui.stop, ui.info];
-    const sep = () => el("span", { className: "mc-rp-sep" });
-    bar = el("div", { className: "mc-rp" }, [ui.toggle, sep(), ui.cut, ...ui.setup, ...ui.run, ui.bm, ui.panel]);
-    bar.querySelector(".mc-rp-sep").hidden = true;
-    ui.sep = bar.querySelector(".mc-rp-sep");
+    bar = el("div", { className: "mc-rp", hidden: true }, [ui.cut, ...ui.setup, ...ui.run, ui.bm, ui.panel]);
     bar.ui = ui;
     return bar;
   }
@@ -113,7 +104,7 @@
   // Scissors mode: a transparent layer over the chart. A band marks the exact candle under the mouse (the label gives its
   // open time in UTC, like the chart axis, and in local time). Click or Enter cuts there, Left/Right arrows nudge by one bar,
   // Esc cancels. The replay then starts with that candle as the last one shown.
-  let cutLayer = null, hostEl = null;
+  let cutLayer = null, hostEl = null, starting = false;
   // Time in the chart's own timezone (chart settings; UTC by default), so the label always matches the time axis.
   const fmtUtc = (ms) => {
     let tz = "UTC"; try { const z = chart().rendererPort.scene.timezone; if (z) tz = z; } catch (_) {}
@@ -161,11 +152,12 @@
       const t = co.logicalToTime(sel);
       endCut();
       const was = c.replay.state, resume = was.active && was.playing;
+      starting = true;
       // Re-cut: leave the running replay first, then start again from the new bar (keeps playing if it was playing).
       Promise.resolve(was.active ? (c.replay.pause(), c.replay.stop()) : null)
         .then(() => c.replay.start({ from: t }))
-        .then(() => { open = true; if (resume) c.replay.play(playMs()); setTimeout(refresh, 50); })
-        .catch((e) => console.warn("replay start", e));
+        .then(() => { open = true; starting = false; if (resume) c.replay.play(playMs()); setTimeout(refresh, 50); })
+        .catch((e) => { starting = false; console.warn("replay start", e); });
     };
     cutKey = (e) => {
       if (e.key === "Escape") { e.preventDefault(); endCut(); }
@@ -206,16 +198,6 @@
     Promise.resolve(c.replay.stop()).then(() => c.replay.start({ from: prev })).then(() => { if (resume) c.replay.play(playMs()); setTimeout(refresh, 50); }).catch((e) => console.warn("replay back", e));
   }
 
-  function startReplay() {
-    const c = chart(); if (!c) return;
-    const b = c.replay.bounds; if (!b) return;
-    let from;
-    if (bar.ui.preset.value === "custom") from = new Date(bar.ui.date.value).getTime();
-    else { const v = Number(bar.ui.preset.value); from = v < 0 ? b.first : b.last - v; }
-    if (!isFinite(from)) return;
-    from = Math.max(from, b.first);
-    Promise.resolve(c.replay.start({ from })).then(() => { setTimeout(refresh, 50); }).catch((e) => console.warn("replay start", e));
-  }
   function togglePlay() {
     const c = chart(); if (!c) return;
     const s = c.replay.state;
@@ -320,18 +302,18 @@
     } catch (e) { console.warn("replay motion", e); }
   }
 
-  let open = false;
+  let open = false, lastOn = null;
   function refresh() {
     if (!bar) return;
     const u = bar.ui, c = chart(), s = c && c.replay && c.replay.state;
     const active = !!(s && s.active);
-    u.toggle.classList.toggle("on", open || active);
+    if (open && !active && !cutLayer && !starting && u.panel.hidden) open = false;   // scissors cancelled before a replay began: close
+    const on = open || active;
+    bar.hidden = !on;
     u.setup.forEach((e) => { e.hidden = !open || active; });
-    u.date.hidden = u.date.hidden || u.preset.value !== "custom" || !open || active;
-    if (open && !active && u.preset.value === "custom") u.date.hidden = false;
     u.run.forEach((e) => { e.hidden = !active; });
-    u.sep.hidden = u.cut.hidden = u.bm.hidden = !(open || active);
-    if (!(open || active)) u.panel.hidden = true;
+    if (!on) u.panel.hidden = true;
+    if (on !== lastOn) { lastOn = on; try { window.parent.postMessage({ evt: "replay:state", on }, location.origin); } catch (_) {} }
     u.bmSave.disabled = !active;
     if (active && !wasActive) motionKey = null;      // a new replay: hand it the tick source again
     wasActive = active;
@@ -356,15 +338,13 @@
     if (getComputedStyle(host).position === "static") host.style.position = "relative";
     host.appendChild(build());
     const u = bar.ui;
-    u.toggle.onclick = () => { endCut(); const c = chart(); if (c && c.replay.state.active) return; open = !open; if (open) { const b = c && c.replay.bounds; if (b && !u.date.value) u.date.value = toLocalInput(b.last - 864e5); } refresh(); };
-    u.preset.onchange = () => { u.date.hidden = u.preset.value !== "custom"; };
+    u.close.onclick = () => { endCut(); open = false; refresh(); };
     hostEl = host;
     u.cut.onclick = beginCut;
     u.bm.onclick = () => { u.panel.hidden = !u.panel.hidden; if (!u.panel.hidden) { bmSay(""); bmRender(); } };
     u.bmSave.onclick = bmSave;
     u.bmName.onkeydown = (e) => { e.stopPropagation(); if (e.key === "Enter") bmSave(); };
     document.addEventListener("pointerdown", (e) => { if (!u.panel.hidden && !bar.contains(e.target)) u.panel.hidden = true; });
-    u.start.onclick = startReplay;
     u.step.onclick = step;
     u.move.onclick = () => { const c = chart(); if (c && c.replay.state.active) { c.replay.pause(); applyMotion(); c.replay.stepUpdate(); refresh(); } };
     u.motion.onchange = () => { moves = Number(u.motion.value); try { localStorage.setItem("madarReplayMoves", String(moves)); } catch (_) {} motionKey = null; applyMotion(); const c = chart(); if (c && c.replay.state.playing) c.replay.play(playMs()); refresh(); };
@@ -395,5 +375,14 @@
     if (bar && !bar.ui.panel.hidden) { bar.ui.panel.hidden = true; return true; }
     return false;
   };
-  window.MadarReplayBar = { mount };
+  // The Replay button of the shell (top bar) calls this: closed -> open the scissors at once; replay running -> exit; open -> close.
+  function toggle() {
+    const c = chart(); if (!c || !bar) return;
+    if (c.replay.state.active) { stopReplay(); open = false; endCut(); refresh(); return; }
+    if (open) { endCut(); open = false; refresh(); return; }
+    open = true;
+    if (!cutLayer) beginCut();
+    refresh();
+  }
+  window.MadarReplayBar = { mount, toggle };
 })();

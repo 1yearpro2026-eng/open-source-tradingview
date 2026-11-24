@@ -154,6 +154,7 @@
   <div class="seg" id="tfs"></div><span class="sep"></span>
   <select id="layout" title="Chart layout (Vela)"><option value="">1 chart</option><option value="2h">2 side by side</option><option value="3h">3 side by side</option><option value="2v">2 stacked</option><option value="4">4 charts</option></select>
   <span class="sep"></span>
+  <div class="seg"><button id="replayBtn" title="Bar Replay: tap, then choose the candle to start from with the scissors">⏪ Replay</button></div>
 </div>
 <div id="stage"><iframe id="frame" title="chart"></iframe><div id="cover" hidden><div id="coverText"></div></div></div>
 <aside id="dock" hidden></aside>
@@ -201,6 +202,7 @@ async function init() {
   await loadLists();
   TFS.forEach(([id, n]) => $("tfs").appendChild(btn(n, () => { st.tf = id; push(); }, id)));
   $("restart").onclick = restartChart;
+  $("replayBtn").onclick = () => { const w = $("frame").contentWindow; if (w) w.postMessage({ cmd: "replay" }, location.origin); };
   $("modeBadge").onclick = () => { if (window.MadarAndroid) setMode(!(offData && offData.local)); };
   pollStatus(); setInterval(pollStatus, 10000);
   offPoll(); setInterval(offPoll, 2000);
@@ -314,6 +316,7 @@ window.addEventListener("message", (e) => {
     if (reapply) { reapply = false; reapplyAll(); for (const k in CAT) if (k.startsWith("vela:")) delete CAT[k]; indChanged(); }  // a fresh engine: put the saved indicators back
     return;
   }
+  if (e.data.evt === "replay:state") { $("replayBtn").classList.toggle("on", !!e.data.on); return; }
   if (e.data.evt === "pine") { onPineResult(e.data); return; }
   if (e.data.evt === "reply") { onReply(e.data); return; }
   if (e.data.evt === "indicators:open") { openIndDlg(); return; }
