@@ -5,18 +5,26 @@
 (function () {
   const css = document.createElement("style");
   css.textContent = `
-  .mc-rp{position:absolute;z-index:29;top:8px;left:50%;transform:translateX(-50%);display:flex;align-items:center;gap:4px;
-    padding:3px;border-radius:8px;flex-wrap:wrap;justify-content:center;max-width:calc(100% - 90px);background:var(--panel,#16212b);border:1px solid var(--line,#2b3946);
-    box-shadow:0 4px 14px rgba(0,0,0,.28);user-select:none;color:var(--text,#d6dee5);font:12px system-ui,sans-serif}
-  .mc-rp button,.mc-rp select,.mc-rp input{height:26px;border:1px solid transparent;border-radius:6px;background:transparent;
-    color:inherit;font:inherit;padding:0 8px;cursor:pointer;box-sizing:border-box}
+  .mc-rp{position:absolute;z-index:60;top:8px;left:50%;transform:translateX(-50%);display:flex;align-items:center;gap:2px;flex-wrap:nowrap;
+    padding:3px 4px;border-radius:10px;max-width:calc(100% - 90px);background:var(--panel,#16212b);border:1px solid var(--line,#2b3946);
+    box-shadow:0 4px 14px rgba(0,0,0,.35);user-select:none;color:var(--text,#d6dee5);font:12px system-ui,sans-serif;opacity:1!important}
+  .mc-rp button,.mc-rp select,.mc-rp input{height:28px;border:1px solid transparent;border-radius:6px;background:transparent;
+    color:inherit;font:inherit;padding:0 8px;cursor:pointer;box-sizing:border-box;opacity:1}
   .mc-rp select,.mc-rp input{background:var(--raised,#1d2a36);border-color:var(--line,#2b3946)}
+  .mc-rp button{min-width:30px;white-space:nowrap}
   .mc-rp button:hover{background:var(--raised,#1d2a36)}
-  .mc-rp button:disabled{opacity:.4;cursor:default}
+  .mc-rp button:disabled{color:var(--faint,#93a2af);cursor:default;background:transparent}
   .mc-rp button.on{background:var(--accent,#e3a33a);color:var(--accentInk,#1a1407)}
-  .mc-rp .mc-rp-info{color:var(--faint,#93a2af);padding:0 6px;white-space:nowrap;min-width:90px}
-  .mc-rp .mc-rp-sep{width:1px;height:18px;background:var(--line,#2b3946)}
+  .mc-rp button.main{background:var(--raised,#1d2a36);border-color:var(--line,#2b3946);font-weight:700}
+  .mc-rp .mc-rp-info{color:var(--faint,#93a2af);padding:0 6px;white-space:nowrap}
+  .mc-rp .mc-rp-grip{width:14px;min-width:14px;padding:0;cursor:grab;color:var(--faint,#93a2af);text-align:center;line-height:28px;touch-action:none}
+  .mc-rp .mc-rp-sep{width:1px;height:18px;background:var(--line,#2b3946);margin:0 2px}
   .mc-rp [hidden],.mc-rp[hidden]{display:none!important}
+  .mc-rp.mini>*:not(.keep){display:none!important}
+  .mc-sp{position:absolute;top:calc(100% + 6px);left:50%;transform:translateX(-50%);width:420px;max-width:92vw;padding:10px;border-radius:8px;
+    background:var(--panel,#16212b);border:1px solid var(--line,#2b3946);box-shadow:0 6px 20px rgba(0,0,0,.4);display:flex;flex-direction:column;gap:8px}
+  .mc-sp .row{display:flex;align-items:center;gap:6px;flex-wrap:wrap}
+  .mc-sp .row button{border-color:var(--line,#2b3946)}
   .mc-bm{position:absolute;top:calc(100% + 6px);right:0;width:340px;max-width:90vw;padding:8px;border-radius:8px;
     background:var(--panel,#16212b);border:1px solid var(--line,#2b3946);box-shadow:0 6px 20px rgba(0,0,0,.35);text-align:left}
   .mc-bm-head{display:flex;gap:4px;margin-bottom:6px}
@@ -36,10 +44,11 @@
   .mc-touch button.go{background:var(--accent,#e3a33a);color:var(--accentInk,#1a1407);font-size:15px;font-weight:700}
   .mc-touch .hint{max-width:220px;font-size:12px;color:var(--faint,#93a2af);padding:0 4px}
   @media (pointer: coarse) {
-    .mc-rp{gap:6px;padding:5px}
-    .mc-rp button,.mc-rp select,.mc-rp input{height:38px;font-size:13px;padding:0 11px}
-    .mc-rp input[type=range]{height:38px;padding:0}
-    .mc-rp .mc-rp-info{font-size:12px}
+    .mc-rp{gap:4px;padding:5px 6px}
+    .mc-rp button,.mc-rp select,.mc-rp input{height:42px;font-size:15px;padding:0 12px;min-width:44px}
+    .mc-rp .mc-rp-grip{width:22px;min-width:22px;padding:0}
+    .mc-rp input[type=range]{height:42px;padding:0}
+    .mc-rp .mc-rp-info{font-size:13px}
     .mc-bm{width:380px}
     .mc-bm-row{padding:9px 8px}
     .mc-bm-row button{height:36px;min-width:40px}
@@ -68,26 +77,31 @@
 
   function build() {
     const ui = {};
+    ui.grip = el("span", { className: "mc-rp-grip keep", textContent: "⋮⋮", title: "Drag to move this bar" });
+    ui.min = el("button", { textContent: "⌃", title: "Hide the controls (only Play/Pause stays)", className: "keep" });
     ui.cut = el("button", { textContent: "✂ Select bar", title: "Click a bar on the chart to start the replay from there (Esc cancels)" });
     ui.close = el("button", { textContent: "✕", title: "Close Replay" });
-    ui.back = el("button", { textContent: "⏮ Back", title: "Go back one bar" });
-    ui.step = el("button", { textContent: "⏭ Step", title: "Next bar (Shift+→)" });
-    ui.move = el("button", { textContent: "▸ Move", title: "One move inside the candle", hidden: true });
+    ui.back = el("button", { textContent: "⏮", title: "Back one bar" });
+    ui.step = el("button", { textContent: "⏭", title: "Next bar (Shift+→)" });
+    ui.move = el("button", { textContent: "▸", title: "One move inside the candle", hidden: true });
     ui.motion = el("select", { title: "Moves inside each candle: the candle forms live instead of appearing whole" }, [el("option", { textContent: "Motion: off", value: "0" }),
       ...(window.MadarReplayMotion ? MadarReplayMotion.MOVES : []).map((n) => el("option", { textContent: n + " moves/candle", value: String(n) }))]);
     ui.motion.value = String(moves);
-    ui.play = el("button", { textContent: "▶ Play", title: "Play / pause (Shift+Space)" });
+    ui.play = el("button", { textContent: "▶", title: "Play / pause (Shift+Space)", className: "main keep" });
     ui.slider = el("input", { type: "range", min: 0, max: 100, step: 1, value: msToPos(speed), title: "Replay speed (log scale)" });
-    ui.slider.style.cssText = "width:110px;padding:0;accent-color:var(--accent,#e3a33a);cursor:pointer";
+    ui.slider.style.cssText = "flex:1;min-width:120px;padding:0;accent-color:var(--accent,#e3a33a);cursor:pointer";
     ui.slabel = el("span", { className: "mc-rp-info", textContent: speedLabel(speed) });
     ui.slabel.style.cssText = "min-width:58px;text-align:right;padding:0 2px";
     ui.chips = CHIPS.map((r) => el("button", { textContent: r + "x", title: r + " bar/s" }));
     ui.chips.forEach((b, i) => { b.dataset.ms = String(Math.round(1000 / CHIPS[i])); b.style.cssText = "padding:0 5px;min-width:0;font-size:11px"; });
-    ui.speed = el("span", {}, [ui.slider, ui.slabel, ...ui.chips]);
-    ui.speed.style.cssText = "display:flex;align-items:center;gap:2px";
-    ui.stop = el("button", { textContent: "⏹ Exit", title: "Stop and return to live" });
+    ui.spBtn = el("button", { textContent: speedLabel(speed) + " ▾", title: "Replay speed and motion" });
+    ui.sp = el("div", { className: "mc-sp", hidden: true }, [
+      el("div", { className: "row" }, [ui.slider, ui.slabel]),
+      el("div", { className: "row" }, ui.chips),
+      el("div", { className: "row" }, [ui.motion])]);
+    ui.stop = el("button", { textContent: "⏹", title: "Exit Replay and return to live" });
     ui.info = el("span", { className: "mc-rp-info" });
-    ui.bm = el("button", { textContent: "🔖 Bookmarks", title: "Save and jump to named replay checkpoints (all symbols, with drawings)" });
+    ui.bm = el("button", { textContent: "🔖", title: "Save and jump to named replay checkpoints (all symbols, with drawings)" });
     ui.panel = el("div", { className: "mc-bm", hidden: true });
     ui.bmName = el("input", { type: "text", placeholder: "Name this point (optional)", maxLength: 60 });
     ui.bmSave = el("button", { textContent: "🔖 Save here", title: "Save the current replay position, symbol, timeframe and drawings" });
@@ -95,8 +109,8 @@
     ui.bmMsg = el("div", { className: "mc-bm-msg" });
     ui.panel.append(el("div", { className: "mc-bm-head" }, [ui.bmName, ui.bmSave]), ui.bmList, ui.bmMsg);
     ui.setup = [ui.close];
-    ui.run = [ui.back, ui.step, ui.move, ui.play, ui.motion, ui.speed, ui.stop, ui.info];
-    bar = el("div", { className: "mc-rp", hidden: true }, [ui.cut, ...ui.setup, ...ui.run, ui.bm, ui.panel]);
+    ui.run = [ui.back, ui.play, ui.step, ui.move, ui.spBtn, ui.info, ui.stop];
+    bar = el("div", { className: "mc-rp", hidden: true }, [ui.grip, ui.cut, ...ui.setup, ...ui.run, ui.bm, ui.min, ui.panel, ui.sp]);
     bar.ui = ui;
     return bar;
   }
@@ -302,7 +316,7 @@
     } catch (e) { console.warn("replay motion", e); }
   }
 
-  let open = false, lastOn = null;
+  let open = false, lastOn = null, minimised = (() => { try { return localStorage.getItem("madarReplayMini") === "1"; } catch (_) { return false; } })();
   function refresh() {
     if (!bar) return;
     const u = bar.ui, c = chart(), s = c && c.replay && c.replay.state;
@@ -312,7 +326,14 @@
     bar.hidden = !on;
     u.setup.forEach((e) => { e.hidden = !open || active; });
     u.run.forEach((e) => { e.hidden = !active; });
-    if (!on) u.panel.hidden = true;
+    if (!on) { u.panel.hidden = true; u.sp.hidden = true; }
+    if (!active) u.sp.hidden = true;
+    const mini = active && minimised;
+    bar.classList.toggle("mini", mini);
+    u.min.hidden = !active;
+    u.min.textContent = mini ? "⤢" : "⌃";
+    u.min.title = mini ? "Show all controls" : "Hide the controls (only Play/Pause stays)";
+    if (mini) { u.sp.hidden = true; u.panel.hidden = true; }
     if (on !== lastOn) { lastOn = on; try { window.parent.postMessage({ evt: "replay:state", on }, location.origin); } catch (_) {} }
     u.bmSave.disabled = !active;
     if (active && !wasActive) motionKey = null;      // a new replay: hand it the tick source again
@@ -320,12 +341,16 @@
     if (active) { applyMotion(); autoSave(); }
     u.move.hidden = !active || !moves;
     u.motion.title = "Moves inside each candle: the candle forms live instead of appearing whole" + (moves && motionUsed ? ` (last candle: ${motionUsed} data)` : "");
-    u.cut.textContent = active ? "✂ Re-cut" : "✂ Select bar";
+    u.cut.textContent = active ? "✂" : "✂ Select bar";
+    u.cut.title = active ? "Re-cut: pick another start candle" : "Pick the candle to start the replay from (Esc cancels)";
+    u.spBtn.textContent = speedLabel(speed) + " ▾";
     u.chips.forEach((b) => b.classList.toggle("on", Math.abs(Number(b.dataset.ms) - speed) <= 2));
     if (active) {
-      u.play.textContent = s.playing ? "⏸ Pause" : "▶ Play";
+      u.play.textContent = s.playing ? "⏸" : "▶";
+      u.play.title = s.playing ? "Pause (Shift+Space)" : "Play (Shift+Space)";
       u.play.classList.toggle("on", s.playing);
-      u.step.disabled = u.play.disabled = !s.remaining;
+      u.step.disabled = !s.remaining;
+      u.play.disabled = !s.playing && !s.remaining;      // Pause is never greyed out while it is playing
       u.info.textContent = `${s.cursorTime ? fmtUtc(s.cursorTime) : ""} · ${s.remaining} left`;
     }
   }
@@ -341,10 +366,12 @@
     u.close.onclick = () => { endCut(); open = false; refresh(); };
     hostEl = host;
     u.cut.onclick = beginCut;
-    u.bm.onclick = () => { u.panel.hidden = !u.panel.hidden; if (!u.panel.hidden) { bmSay(""); bmRender(); } };
+    u.bm.onclick = () => { u.sp.hidden = true; u.panel.hidden = !u.panel.hidden; if (!u.panel.hidden) { bmSay(""); bmRender(); } };
     u.bmSave.onclick = bmSave;
     u.bmName.onkeydown = (e) => { e.stopPropagation(); if (e.key === "Enter") bmSave(); };
-    document.addEventListener("pointerdown", (e) => { if (!u.panel.hidden && !bar.contains(e.target)) u.panel.hidden = true; });
+    document.addEventListener("pointerdown", (e) => { if (!bar.contains(e.target)) { u.panel.hidden = true; u.sp.hidden = true; } });
+    u.min.onclick = () => { minimised = !minimised; try { localStorage.setItem("madarReplayMini", minimised ? "1" : "0"); } catch (_) {} refresh(); };
+    u.spBtn.onclick = () => { u.sp.hidden = !u.sp.hidden; if (!u.sp.hidden) u.panel.hidden = true; };
     u.step.onclick = step;
     u.move.onclick = () => { const c = chart(); if (c && c.replay.state.active) { c.replay.pause(); applyMotion(); c.replay.stepUpdate(); refresh(); } };
     u.motion.onchange = () => { moves = Number(u.motion.value); try { localStorage.setItem("madarReplayMoves", String(moves)); } catch (_) {} motionKey = null; applyMotion(); const c = chart(); if (c && c.replay.state.playing) c.replay.play(playMs()); refresh(); };
@@ -365,6 +392,19 @@
       if (e.key === "ArrowRight") { e.preventDefault(); step(); }
       else if (e.code === "Space") { e.preventDefault(); togglePlay(); }
     });
+    // Drag the bar by its grip, so it can be moved out of the way (the place is remembered).
+    const place = (x, y) => {
+      const hr = host.getBoundingClientRect(), w = bar.offsetWidth, h = bar.offsetHeight;
+      bar.style.transform = "none";
+      bar.style.left = Math.max(0, Math.min(hr.width - w, x)) + "px"; bar.style.top = Math.max(0, Math.min(hr.height - h, y)) + "px";
+    };
+    try { const p = JSON.parse(localStorage.getItem("madarReplayPos") || "null"); if (p) requestAnimationFrame(() => place(p.x, p.y)); } catch (_) {}
+    u.grip.onpointerdown = (e) => {
+      e.preventDefault(); try { u.grip.setPointerCapture(e.pointerId); } catch (_) {}
+      const br = bar.getBoundingClientRect(), hr = host.getBoundingClientRect(), dx = e.clientX - br.left, dy = e.clientY - br.top;
+      u.grip.onpointermove = (m) => place(m.clientX - hr.left - dx, m.clientY - hr.top - dy);
+      u.grip.onpointerup = () => { u.grip.onpointermove = u.grip.onpointerup = null; try { localStorage.setItem("madarReplayPos", JSON.stringify({ x: bar.offsetLeft, y: bar.offsetTop })); } catch (_) {} };
+    };
     timer = setInterval(refresh, 300);
     refresh();
   }
@@ -372,6 +412,7 @@
   // Android back button: close the innermost thing that is open. Returns true when it did something.
   window.madarBack = () => {
     if (cutLayer) { endCut(); return true; }
+    if (bar && !bar.ui.sp.hidden) { bar.ui.sp.hidden = true; return true; }
     if (bar && !bar.ui.panel.hidden) { bar.ui.panel.hidden = true; return true; }
     return false;
   };
