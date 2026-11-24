@@ -1,0 +1,11 @@
+{
+  "name": "madar-chart-android",
+  "private": true,
+  "version": "0.1.0",
+  "description": "Madar Chart Android shell (Capacitor 8). Web UI is copied from ../hub by ../scripts/build_android.sh",
+  "dependencies": {
+    "@capacitor/android": "^8.6.2",
+    "@capacitor/cli": "^8.6.2",
+    "@capacitor/core": "^8.6.2"
+  }
+}

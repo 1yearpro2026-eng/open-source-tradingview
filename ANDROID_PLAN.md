@@ -79,12 +79,12 @@ H4/D1 and ~2 months of M5/M15, ~1 month of M1), Bybit 1000 per request, Binance 
 ## Batches (each ends with an APK the user can install)
 Status legend: [ ] todo, [x] done. Effort is a rough guess, not a promise.
 
-### Batch 0 — Skeleton and first APK (about 1 work session)
-- [ ] Create `android-app/` (Capacitor 8 project, appId `com.alwaeli.madarchart`, name مدار چارت, minSdk 26, target 36), Gradle/AGP versions as in مدار.
-- [ ] New keystore `madarchart.keystore` (pinned), launcher icon (simple chart mark, generated), landscape, immersive full screen, keep-screen-on option, splash.
-- [ ] Web assets: copy `hub/` UI files into the app (`scripts/build_android.sh` syncs them; excludes Python files, logs, caches).
-- [ ] Stub native `/api` interceptor serving a tiny sample (the EURUSD October candles) so the chart draws and the user can judge touch/scroll/zoom smoothness on the Honor Pad right away.
-- [ ] Build script: web sync + Gradle + copy APK to `~/Desktop/MadarChart.apk`.
+### Batch 0 — Skeleton and first APK (BUILT 2026-11-24; waiting for the user's tablet test)
+- [x] Create `android-app/` (Capacitor 8 project, appId `com.alwaeli.madarchart`, name مدار چارت, minSdk 26, target 36), Gradle/AGP versions as in مدار.
+- [x] New keystore `madarchart.keystore` (pinned), launcher icon (simple chart mark, generated), landscape, immersive full screen, keep-screen-on option, splash.
+- [x] Web assets: copy `hub/` UI files into the app (`scripts/build_android.sh` syncs them; excludes Python files, logs, caches).
+- [x] Stub native `/api` interceptor serving a tiny sample (the EURUSD October candles) so the chart draws and the user can judge touch/scroll/zoom smoothness on the Honor Pad right away.
+- [x] Build script: web sync + Gradle + copy APK to `~/Desktop/MadarChart.apk`.
 - Done when: APK installs on the Honor Pad, opens fullscreen, shows the chart with sample data, pinch/pan work, replay bar opens.
 - User tests: install, open, pan/zoom the chart, open Replay, open Settings; report lag, cut-off edges (camera hole / gesture bar), wrong sizes. Also report the "Android System WebView" version (Settings > Apps).
 
@@ -145,4 +145,5 @@ verify gold against a live feed after the first import. Files without a weekend 
 7. Mac disk space for Gradle builds (89 GB free at planning time).
 
 ## Progress log
+- 2026-11-24 (Batch 0 built): `android-app/` created (Capacitor 8.6, Gradle 8.14.3, AGP 8.13, Kotlin 2.1.21, minSdk 26, target 36). Files: `ApiHandler.kt` (pure Kotlin /api twin, serves the bundled EURUSD sample from `assets/sample`), `ApiWebViewClient.kt` (intercepts /api/* via Capacitor's `bridge.setWebViewClient`), `MainActivity.kt` (immersive landscape), unit tests `ApiHandlerTest` (5 pass). Web tweaks: `lab.js` sets `window.MadarAndroid` (https://localhost) and skips the WebSocket there, safe default symbol; `hub.html` falls back to the first instrument. Scripts: `scripts/sync_web.sh`, `scripts/build_android.sh [test]`, `scripts/export_sample_android.py`. APK: `~/Desktop/MadarChart.apk` (5.3 MB, signed with the new key, id `com.alwaeli.madarchart`). Verified: Gradle build OK, 5 unit tests OK, apksigner/aapt2 checks, and the web UI in the desktop browser against a stand-in server returning the same /api JSON (chart + replay bar load, no console errors). NOT yet run on any Android device. Keystore backup: `~/Documents/MadarChart-keystore-backup/`.
 - 2026-11-24: plan written; decisions confirmed by the user (Honor Pad 10, install-and-test himself, EURUSD + gold first, id `com.alwaeli.madarchart`, no Firebase). Python app fully committed (git `1.3`). Nothing built for Android yet. Next: Batch 0.

@@ -25,3 +25,12 @@ build/node_modules/
 .DS_Store
 Thumbs.db
 *.bak*
+
+# android (keystore and passwords never go to git; a backup copy lives in ~/Documents/MadarChart-keystore-backup)
+android-app/node_modules/
+android-app/www/
+android-app/android/keystore/
+android-app/android/keystore.properties
+android-app/android/app/src/main/assets/public/
+android-app/android/app/src/main/assets/capacitor.config.json
+android-app/android/app/src/main/assets/capacitor.plugins.json

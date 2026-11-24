@@ -170,6 +170,7 @@ async function init() {
   DATA = await (await fetch("/api/instruments")).json();
   DATA.instruments.forEach((i) => Object.entries(i.brokers).forEach(([b, opts]) => opts.forEach((o) => BY_TICKER.set(o.ticker, { key: i.key, broker: b }))));
   if (!inst(st.key) || !inst(st.key).brokers[st.broker]) Object.assign(st, { key: "XAUUSD", broker: "deriv", ticker: "frxXAUUSD" });
+  if (!inst(st.key) || !inst(st.key).brokers[st.broker]) { const f = DATA.instruments[0]; if (f) { const b = Object.keys(f.brokers)[0]; Object.assign(st, { key: f.key, broker: b, ticker: f.brokers[b][0].ticker }); } }  // the usual default is not there (e.g. the Android app): first instrument
   TFS.forEach(([id, n]) => $("tfs").appendChild(btn(n, () => { st.tf = id; push(); }, id)));
   DATA.brokers.forEach((b) => { const x = btn("", () => chooseBroker(b.id), b.id); x.innerHTML = `<span class="dot"></span>${b.name}`; $("brokers").appendChild(x); });
   $("restart").onclick = restartChart;

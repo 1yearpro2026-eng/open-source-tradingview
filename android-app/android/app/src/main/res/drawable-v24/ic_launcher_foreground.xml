@@ -1,0 +1,11 @@
+<?xml version="1.0" encoding="utf-8"?>
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="108dp" android:height="108dp" android:viewportWidth="108" android:viewportHeight="108">
+    <!-- three candles: wick + body, amber up / rust down (inside the 66dp safe zone) -->
+    <path android:fillColor="#E3A33A" android:pathData="M34,38h3v32h-3z"/>
+    <path android:fillColor="#E3A33A" android:pathData="M30,46h11v16h-11z"/>
+    <path android:fillColor="#B4472F" android:pathData="M52.5,30h3v40h-3z"/>
+    <path android:fillColor="#B4472F" android:pathData="M48,36h12v22h-12z"/>
+    <path android:fillColor="#E3A33A" android:pathData="M71,34h3v34h-3z"/>
+    <path android:fillColor="#E3A33A" android:pathData="M66.5,40h12v18h-12z"/>
+</vector>

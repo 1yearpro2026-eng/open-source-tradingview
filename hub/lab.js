@@ -18,6 +18,8 @@ if (LabEmbedded) {
   ].join(" ");
   document.head.appendChild(st);
 }
+// Running inside the Android app (Capacitor serves the UI from https://localhost; the Mac server is http://localhost:8770).
+window.MadarAndroid = location.protocol === "https:" && location.hostname === "localhost";
 window.LabFeed = (() => {
   // Leave a 20 px bar at the bottom for the status strip, so it never covers the chart (standalone pages only).
   const chartBox = document.getElementById("chart");
@@ -41,6 +43,7 @@ window.LabFeed = (() => {
 
   // Live candle updates. onBar(bar) gets {time(sec),open,high,low,close,volume}.
   function live(symbol, tf, onBar, source) {
+    if (window.MadarAndroid) return () => {};   // no WebSocket server on the device; live candles arrive with Batch 3
     source = source || window.srcOf(symbol);
     const ws = new WebSocket(wsUrl());
     ws.onopen = () => ws.send(JSON.stringify({ source, symbol, tf }));
@@ -98,7 +101,7 @@ window.LabSymbols = (() => {
   }
 })();
 window.srcOf = (t) => { const s = LabSymbols.find((x) => x.ticker === t); return s ? s.source : "binance"; };
-window.LabDefaultSymbol = (LabSymbols.find((s) => s.ticker === "frxXAUUSD") || LabSymbols.find((s) => s.ticker === "BTCUSD")).ticker;
+window.LabDefaultSymbol = (LabSymbols.find((s) => s.ticker === "frxXAUUSD") || LabSymbols.find((s) => s.ticker === "BTCUSD") || LabSymbols[0] || { ticker: "BTCUSD" }).ticker;
 
 // Madar Chart: the shell opens a page as hub-frame with ?symbol=&tf=&embed=1, sends {cmd:"set"} to switch,
 // and the page reports user changes back with LabNotify (only when embedded).
