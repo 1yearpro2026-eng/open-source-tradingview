@@ -65,7 +65,8 @@ class MainActivity : BridgeActivity() {
         }
         val feeds = Feeds(OkHttpHttp(), OkDerivApi())
         val service = BarService(pack, SqlUserDb(AndroidSql(File(filesDir, "user.db").path)), feeds, settings)
-        val book = SymbolBook(feeds, AndroidTextStore(filesDir)) { pack?.symbolRows() ?: emptyList() }
+        val book = SymbolBook(feeds, AndroidTextStore(filesDir), { settings.localMode },
+            { src, tk -> Feeds.TF_SEC.keys.any { service.has(src, tk, it) } }) { pack?.symbolRows() ?: emptyList() }
         book.startLoop()
         val binance = BinanceWeightApi()
         val stores = HashMap<String, TradeStore>()

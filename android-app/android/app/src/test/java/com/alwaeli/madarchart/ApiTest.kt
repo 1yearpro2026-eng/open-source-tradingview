@@ -20,6 +20,24 @@ class ApiTest {
     private fun get(path: String, vararg q: Pair<String, String>) = api.handle("GET", path, q.toMap())
     private fun text(r: ApiHandler.Reply) = String(r.body)
 
+    @Test fun liveAndLocalListsNeverMix() {
+        val mode = MemSettings(false)
+        val b = SymbolBook(feeds, MemText(), { mode.localMode }, { s, t -> service.has(s, t, "M1") }) { pack.symbolRows() }
+        fun sources(json: String) = JSONObject(json).getJSONArray("symbols").let { a -> (0 until a.length()).map { a.getJSONObject(it).getString("source") }.toSet() }
+        fun brokers(json: String) = JSONObject(json).getJSONArray("brokers").let { a -> (0 until a.length()).map { a.getJSONObject(it).getString("id") }.toSet() }
+        mode.localMode = false
+        assertTrue(!sources(b.symbolsJson()).contains("local"))
+        assertTrue(!brokers(b.instrumentsJson()).contains("local"))
+        assertTrue(!b.statusJson().contains("\"local\""))
+        mode.localMode = true
+        val s = sources(b.symbolsJson())
+        assertTrue(s.contains("local"))
+        assertTrue(!s.contains("bybit") && !s.contains("binance"))               // nothing stored of those: not listed
+        val names = JSONObject(b.symbolsJson()).getJSONArray("symbols").let { a -> (0 until a.length()).map { a.getJSONObject(it).getString("ticker") } }
+        assertTrue(names.contains("LOC_EURUSD") && names.contains("frxXAUUSD"))   // the stored Deriv gold is listed; other Deriv symbols are not
+        assertTrue(!names.contains("frxEURUSD"))
+    }
+
     @Test fun modeSwitchIsRemembered() {
         assertEquals("""{"local":true}""", text(get("/api/offline/mode", "data" to """{"local":true}""")))
         assertTrue(settings.localMode)

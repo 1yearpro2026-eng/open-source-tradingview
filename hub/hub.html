@@ -180,14 +180,28 @@ st.engine = "vela";  // Vela is the only chart engine
 const save = () => { try { localStorage.setItem("chartHub", JSON.stringify(st)); } catch (_) {} };
 const inst = (k) => DATA.instruments.find((i) => i.key === k);
 
-async function init() {
+// The instrument list and the broker buttons. In the app the list depends on the mode (Live: feeds only; Local: stored data only),
+// so it is read again whenever the mode changes.
+async function loadLists() {
   DATA = await (await fetch("/api/instruments")).json();
+  BY_TICKER.clear();
   DATA.instruments.forEach((i) => Object.entries(i.brokers).forEach(([b, opts]) => opts.forEach((o) => BY_TICKER.set(o.ticker, { key: i.key, broker: b }))));
   if (!inst(st.key) || !inst(st.key).brokers[st.broker]) Object.assign(st, { key: "XAUUSD", broker: "deriv", ticker: "frxXAUUSD" });
   if (!inst(st.key) || !inst(st.key).brokers[st.broker]) { const f = DATA.instruments[0]; if (f) { const b = Object.keys(f.brokers)[0]; Object.assign(st, { key: f.key, broker: b, ticker: f.brokers[b][0].ticker }); } }  // the usual default is not there (e.g. the Android app): first instrument
-  TFS.forEach(([id, n]) => $("tfs").appendChild(btn(n, () => { st.tf = id; push(); }, id)));
+  $("brokers").innerHTML = "";
   DATA.brokers.forEach((b) => { const x = btn("", () => chooseBroker(b.id), b.id); x.innerHTML = `<span class="dot"></span>${b.name}`; $("brokers").appendChild(x); });
+}
+async function setMode(local) {
+  await offPost("mode", { local });
+  await offPoll();
+  if (window.MadarAndroid) { await loadLists(); save(); paint(); }
+  loadEngine();
+}
+async function init() {
+  await loadLists();
+  TFS.forEach(([id, n]) => $("tfs").appendChild(btn(n, () => { st.tf = id; push(); }, id)));
   $("restart").onclick = restartChart;
+  $("modeBadge").onclick = () => { if (window.MadarAndroid) setMode(!(offData && offData.local)); };
   pollStatus(); setInterval(pollStatus, 10000);
   offPoll(); setInterval(offPoll, 2000);
   paint(); loadEngine();
@@ -344,7 +358,8 @@ async function offPost(path, body) {
 async function offPoll() {
   let n; try { n = await (await fetch("/api/offline/status")).json(); } catch (_) { return; }
   const sig = JSON.stringify(n), changed = sig !== offSig; offSig = sig; offData = n;
-  $("modeBadge").hidden = !n.local;
+  if (window.MadarAndroid) { $("modeBadge").hidden = false; $("modeBadge").textContent = n.local ? "LOCAL" : "LIVE"; $("modeBadge").style.cssText += ";cursor:pointer;padding:6px 14px;border:1px solid var(--accent);border-radius:6px"; $("modeBadge").title = "Tap to switch between Live (internet feeds only) and Local (data stored on this tablet only)"; }
+  else $("modeBadge").hidden = !n.local;
   if (openPanel === "offline" && changed) renderOffline();
 }
 function renderOffline() {
@@ -356,7 +371,7 @@ function renderOffline() {
   const add = (html, cls) => { const r = document.createElement("div"); r.className = cls || "row"; r.style.flexWrap = "wrap"; r.innerHTML = html; d.appendChild(r); return r; };
   const mode = add(`<b>Data mode</b><span style="display:flex;gap:6px"><button data-m="0">Live</button><button data-m="1">Local only</button></span>`);
   mode.querySelectorAll("button").forEach((b) => { const on = (b.dataset.m === "1") === o.local; b.style.cssText = `padding:3px 10px;border:1px solid ${on ? "var(--accent)" : "var(--line)"};background:var(--bg);color:${on ? "var(--accent)" : "var(--text)"};border-radius:4px;cursor:pointer`;
-    b.onclick = async () => { await offPost("mode", { local: b.dataset.m === "1" }); await offPoll(); loadEngine(); }; });
+    b.onclick = () => setMode(b.dataset.m === "1"); });
   add(`<span style="width:100%">${o.local ? "Charts read only from this computer. No internet needed. No live candles." : "Newest candles come from the feed; older ones load from this computer when downloaded. Without internet it falls back here by itself."}</span>`);
   const i = inst(st.key);
   const sel = add(`<b>${st.ticker}</b><span>${(DATA.brokers.find((b) => b.id === st.broker) || {}).name || st.broker} - every timeframe</span>`);
