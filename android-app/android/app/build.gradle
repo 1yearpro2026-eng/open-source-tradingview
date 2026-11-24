@@ -8,6 +8,10 @@ if (ksFile.exists()) ksFile.withInputStream { ksProps.load(it) }
 android {
     namespace = "com.alwaeli.madarchart"
     compileSdk = rootProject.ext.compileSdkVersion
+    // The pack is already compressed inside: store it as is (faster install, and the app can read its size for the progress bar).
+    androidResources { noCompress += ["db"] }
+    // The tests decode whole series of the real pack (millions of candles each).
+    testOptions { unitTests.all { maxHeapSize = "3g" } }
     defaultConfig {
         applicationId "com.alwaeli.madarchart"
         minSdkVersion rootProject.ext.minSdkVersion

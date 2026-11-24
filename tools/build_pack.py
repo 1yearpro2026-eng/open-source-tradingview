@@ -31,28 +31,39 @@ FORMAT = 1
 
 # ---------- codec (the Kotlin Codec.kt must match this exactly) ----------
 def zigzag_varints(values):
-    out = bytearray()
-    for v in values:
-        z = (int(v) << 1) ^ (int(v) >> 63)
-        while z > 0x7F:
-            out.append((z & 0x7F) | 0x80)
-            z >>= 7
-        out.append(z)
-    return bytes(out)
+    """Vectorised: the same bytes as the plain loop (zigzag, then 7 bits per byte, low group first, 0x80 = more follows)."""
+    v = np.asarray(values, dtype=np.int64)
+    z = ((v << 1) ^ (v >> 63)).astype(np.uint64)
+    n = len(z)
+    if n == 0:
+        return b""
+    lens = np.ones(n, dtype=np.int64)
+    for k in range(1, 10):
+        lens += (z >> np.uint64(7 * k)) > 0
+    mat = np.empty((n, 10), dtype=np.uint8)
+    for k in range(10):
+        byte = ((z >> np.uint64(7 * k)) & np.uint64(0x7F)).astype(np.uint8)
+        byte |= np.where(k < lens - 1, 0x80, 0).astype(np.uint8)
+        mat[:, k] = byte
+    keep = np.arange(10)[None, :] < lens[:, None]
+    return mat[keep].tobytes()
 
 
 def read_varints(buf, n):
-    vals, i, ln = [], 0, len(buf)
-    while len(vals) < n:
-        z, shift = 0, 0
-        while True:
-            b = buf[i]; i += 1
-            z |= (b & 0x7F) << shift
-            if b < 0x80:
-                break
-            shift += 7
-        vals.append((z >> 1) ^ -(z & 1))
-    return vals, i
+    """Returns (list-like of n signed ints, bytes used)."""
+    arr = np.frombuffer(buf, dtype=np.uint8)
+    ends = np.flatnonzero(arr < 0x80)[:n]
+    if len(ends) < n:
+        raise ValueError("truncated varint stream")
+    used = int(ends[-1]) + 1
+    starts = np.concatenate(([0], ends[:-1] + 1))
+    pos = np.arange(used)
+    owner = np.repeat(np.arange(n), ends - starts + 1)
+    shift = ((pos - starts[owner]) * 7).astype(np.uint64)
+    part = (arr[:used].astype(np.uint64) & np.uint64(0x7F)) << shift
+    z = np.add.reduceat(part, starts)
+    vals = (z >> np.uint64(1)).astype(np.int64) ^ -((z & np.uint64(1)).astype(np.int64))
+    return vals, used
 
 
 def encode_chunk(t, o, h, l, c, v):
@@ -69,13 +80,11 @@ def decode_chunk(blob, n, first):
     cols, pos = [], 0
     for _ in range(6):
         vals, used = read_varints(raw[pos:], n)
-        cols.append(np.array(vals, dtype=np.int64)); pos += used
+        cols.append(np.asarray(vals, dtype=np.int64)); pos += used
     dt, do, dh, dl, dc, v = cols
     t = first + np.cumsum(dt)                                   # dt[0] is 0
-    c = np.empty(n, dtype=np.int64); o = np.empty(n, dtype=np.int64)
-    prev = 0
-    for i in range(n):                                          # the open depends on the previous close
-        o[i] = prev + do[i]; c[i] = o[i] + dc[i]; prev = c[i]
+    c = np.cumsum(do + dc)                                      # open[i] = close[i-1] + do[i]; close[i] = open[i] + dc[i]
+    o = c - dc
     h = np.maximum(o, c) + dh
     l = np.minimum(o, c) - dl
     return t, o, h, l, c, v

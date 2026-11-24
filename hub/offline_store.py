@@ -304,7 +304,7 @@ def _us_dst_active(day):
     return d <= day < e
 
 
-def calibrate_shifts(times):
+def calibrate_shifts(times, open_offset=0, smooth=False):
     """Per bar, seconds to ADD to a file clock to get UTC, found from the file itself: the forex week reopens on Sunday at
     17:00 New York time = 21:00 UTC in US summer time, 22:00 UTC in US winter time. Whatever clock the file uses (EST, EST
     with daylight saving, Europe-linked), the reopen time tells the shift for that week. times: sorted epoch seconds as
@@ -318,10 +318,14 @@ def calibrate_shifts(times):
         if d.weekday() != 6:                                          # weekend reopen = a Sunday (holiday gaps are skipped)
             continue
         hr = round((d.hour * 60 + d.minute) / 60)
-        target = 21 if _us_dst_active(d.date()) else 22
+        target = (21 if _us_dst_active(d.date()) else 22) + open_offset   # open_offset=1 for metals (reopen an hour later)
         starts.append(int(t[i])); vals.append((target - hr) * 3600)
     if not starts:
         return None, {}
+    if smooth and len(vals) >= 5:                                     # a holiday reopen at a odd hour must not shift its week
+        v = np.asarray(vals, dtype="int64")
+        pad = np.pad(v, 2, mode="edge")
+        vals = [int(np.median(pad[i:i + 5])) for i in range(len(v))]
     idx = np.searchsorted(np.asarray(starts), t, side="right") - 1
     arr = np.asarray(vals, dtype="int64")
     shifts = arr[np.clip(idx, 0, None)]                               # bars before the first reopen use the first week's shift

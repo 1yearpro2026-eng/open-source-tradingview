@@ -34,3 +34,7 @@ android-app/android/keystore.properties
 android-app/android/app/src/main/assets/public/
 android-app/android/app/src/main/assets/capacitor.config.json
 android-app/android/app/src/main/assets/capacitor.plugins.json
+
+# generated data pack (hundreds of MB) and its test numbers: rebuilt by tools/build_pack.py
+android-app/android/app/src/main/assets/madar_pack.db*
+android-app/android/app/src/test/resources/pack_golden.json

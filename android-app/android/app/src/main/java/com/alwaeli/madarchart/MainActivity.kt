@@ -27,7 +27,36 @@ class MainActivity : BridgeActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         // The data pack (inside the APK) is copied to private storage on first run / after an update, then opened read-only.
-        val pack = try { PackStore(AndroidPackDb(PackInstaller.ensure(this).path)) } catch (e: Exception) { android.util.Log.e("Madar", "pack", e); null }
+        // A big pack takes a few seconds: a progress screen covers the app until the copy is done, then the page reloads.
+        if (PackInstaller.needsCopy(this)) {
+            val ui = ProgressScreen(this)
+            ui.attach(this)
+            Thread({
+                val ok = try { PackInstaller.install(this) { d, t -> ui.update(d, t) }; true } catch (e: Exception) { android.util.Log.e("Madar", "pack copy", e); false }
+                runOnUiThread {
+                    setupBackend()
+                    ui.remove()
+                    bridge.webView.reload()
+                    if (!ok) android.widget.Toast.makeText(this, "Data pack could not be installed (is the storage full?)", android.widget.Toast.LENGTH_LONG).show()
+                }
+            }, "pack-copy").start()
+        } else {
+            setupBackend()
+        }
+        hideSystemBars()
+        // Back button: the page closes its innermost open thing (scissors, panel, dialog); when there is nothing, the app goes back as usual.
+        backCallback = object : OnBackPressedCallback(true) {
+            override fun handleOnBackPressed() {
+                bridge.webView.evaluateJavascript("(function(){try{return !!(window.madarBack&&window.madarBack())}catch(e){return false}})()") { r ->
+                    if (r != "true") { isEnabled = false; onBackPressedDispatcher.onBackPressed() }
+                }
+            }
+        }
+        onBackPressedDispatcher.addCallback(this, backCallback!!)
+    }
+
+    private fun setupBackend() {
+        val pack = try { PackStore(AndroidPackDb(PackInstaller.target(this).path)) } catch (e: Exception) { android.util.Log.e("Madar", "pack", e); null }
         val prefs = getSharedPreferences("madar", MODE_PRIVATE)
         val settings = object : Settings {
             override var localMode: Boolean
@@ -48,17 +77,6 @@ class MainActivity : BridgeActivity() {
             note = { id, msg -> push("if(w.__madarNote)w.__madarNote($id,${org.json.JSONObject.quote(msg)})") })
         live = hub
         bridge.webView.addJavascriptInterface(NativeBridge(hub), "MadarNative")
-
-        hideSystemBars()
-        // Back button: the page closes its innermost open thing (scissors, panel, dialog); when there is nothing, the app goes back as usual.
-        backCallback = object : OnBackPressedCallback(true) {
-            override fun handleOnBackPressed() {
-                bridge.webView.evaluateJavascript("(function(){try{return !!(window.madarBack&&window.madarBack())}catch(e){return false}})()") { r ->
-                    if (r != "true") { isEnabled = false; onBackPressedDispatcher.onBackPressed() }
-                }
-            }
-        }
-        onBackPressedDispatcher.addCallback(this, backCallback!!)
     }
 
     /** Run a snippet inside the chart frame (the page of the iframe in hub.html). */
@@ -88,4 +106,35 @@ class MainActivity : BridgeActivity() {
         c.systemBarsBehavior = WindowInsetsControllerCompat.BEHAVIOR_SHOW_TRANSIENT_BARS_BY_SWIPE
         c.hide(WindowInsetsCompat.Type.systemBars())
     }
+}
+
+/** Full-screen "preparing the data" cover with a progress bar, shown while the pack is copied out of the APK. */
+class ProgressScreen(context: android.content.Context) {
+    private val root = android.widget.FrameLayout(context)
+    private val bar = android.widget.ProgressBar(context, null, android.R.attr.progressBarStyleHorizontal)
+    private val label = android.widget.TextView(context)
+
+    init {
+        root.setBackgroundColor(0xFF131722.toInt())
+        root.isClickable = true
+        val col = android.widget.LinearLayout(context).apply { orientation = android.widget.LinearLayout.VERTICAL; gravity = android.view.Gravity.CENTER_HORIZONTAL }
+        label.setTextColor(0xFFD1D4DC.toInt()); label.textSize = 20f; label.gravity = android.view.Gravity.CENTER
+        label.text = "جاري تجهيز البيانات لأول مرة…\nPreparing the data (first start only)"
+        bar.max = 1000; bar.isIndeterminate = true
+        col.addView(label, android.widget.LinearLayout.LayoutParams(-2, -2))
+        col.addView(bar, android.widget.LinearLayout.LayoutParams(900, 80).apply { topMargin = 40 })
+        root.addView(col, android.widget.FrameLayout.LayoutParams(-2, -2, android.view.Gravity.CENTER))
+    }
+
+    fun attach(activity: android.app.Activity) = activity.addContentView(root, android.view.ViewGroup.LayoutParams(-1, -1))
+
+    fun update(done: Long, total: Long) = root.post {
+        if (total > 0) {
+            bar.isIndeterminate = false
+            bar.progress = (done * 1000 / total).toInt()
+            label.text = "جاري تجهيز البيانات لأول مرة…\nPreparing the data (first start only): ${done * 100 / total}%  (${done shr 20} / ${total shr 20} MB)"
+        }
+    }
+
+    fun remove() = (root.parent as? android.view.ViewGroup)?.removeView(root)
 }

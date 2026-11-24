@@ -29,21 +29,21 @@ class PackTest {
         for (i in 0 until golden.length()) {
             val g = golden.getJSONObject(i)
             val src = g.getString("source"); val tk = g.getString("ticker"); val tf = g.getString("tf")
-            val a = bars(src, tk, tf, "limit" to "200000")
             val label = "$src:$tk:$tf"
-            assertEquals(label, g.getInt("count"), a.length())
-            assertEquals(label, g.getLong("first"), a.getJSONObject(0).getLong("time"))
-            assertEquals(label, g.getLong("last"), a.getJSONObject(a.length() - 1).getLong("time"))
-            // sum of closes, as scaled integers: exact, no float noise
+            // arrays, not JSON: a real series has millions of M1 candles
+            val a = store.readBars(src, tk, tf, null, g.getInt("count") + 10)!!
+            assertEquals(label, g.getInt("count"), a.size)
+            assertEquals(label, g.getLong("first"), a.t[0])
+            assertEquals(label, g.getLong("last"), a.t[a.size - 1])
             val scale = Math.pow(10.0, g.getInt("digits").toDouble())
-            var sum = 0L
-            for (k in 0 until a.length()) sum += Math.round(a.getJSONObject(k).getDouble("close") * scale)
+            var sum = 0L; var vol = 0L
+            for (k in 0 until a.size) {
+                sum += Math.round(a.c[k] * scale)
+                vol += Math.round(a.v[k] * g.getInt("vscale"))
+                if (k > 0) assertTrue(label, a.t[k] > a.t[k - 1])
+            }
             assertEquals(label, g.getLong("sum_close"), sum)
-            var vol = 0L
-            for (k in 0 until a.length()) vol += Math.round(a.getJSONObject(k).getDouble("volume") * g.getInt("vscale"))
             assertEquals(label, g.getLong("sum_volume"), vol)
-            // times strictly increase
-            for (k in 1 until a.length()) assertTrue(label, a.getJSONObject(k).getLong("time") > a.getJSONObject(k - 1).getLong("time"))
         }
     }
 
