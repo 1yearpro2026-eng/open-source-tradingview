@@ -38,7 +38,10 @@ class MainActivity : BridgeActivity() {
         val service = BarService(pack, SqlUserDb(AndroidSql(File(filesDir, "user.db").path)), feeds, settings)
         val book = SymbolBook(feeds, AndroidTextStore(filesDir)) { pack?.symbolRows() ?: emptyList() }
         book.startLoop()
-        bridge.setWebViewClient(ApiWebViewClient(bridge, ApiHandler(service, book)))
+        val binance = BinanceWeightApi()
+        val stores = HashMap<String, TradeStore>()
+        val flow = OrderFlow(binance, { sym -> synchronized(stores) { stores.getOrPut(sym) { TradeStore(sym, binance) } } })
+        bridge.setWebViewClient(ApiWebViewClient(bridge, ApiHandler(service, book, flow)))
 
         val hub = LiveHub(service, Net.client,
             emit = { id, bar -> push("if(w.__madarBar)w.__madarBar($id,$bar)") },

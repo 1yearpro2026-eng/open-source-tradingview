@@ -43,4 +43,28 @@ class LiveNetworkTest {
         assertTrue("bybit candles arrived", 2 in ids)
         assertTrue("deriv candles arrived (market open)", 3 in ids)
     }
+
+    @Test fun orderFlowFromTheRealBinance() {
+        assumeTrue(on)
+        val binance = BinanceWeightApi()
+        val svc = BarService(null, SqlUserDb(JdbcSql()), feeds, MemSettings(false))
+        val stores = HashMap<String, TradeStore>()
+        val flow = OrderFlow(binance, { s -> stores.getOrPut(s) { TradeStore(s, binance) } })
+        val hist = OrderFlow.History { t, tf, n, to -> svc.barsFor("binance", t, tf, n, to) }
+        assertEquals("BTCUSDT", flow.realSymbol("BTCUSD")); assertEquals("XAUUSDT", flow.realSymbol("frxXAUUSD"))
+        val now = System.currentTimeMillis() / 1000
+        val (rows, info) = flow.delta("BTCUSD", "M5", now - 3 * 3600, now, "auto", hist)
+        println("delta: ${rows.length()} bars, source=${info.getString("source")}")
+        assertTrue(rows.length() > 20); assertEquals("real", info.getString("source"))
+        val (sess, pinfo) = flow.profile("BTCUSD", "M5", now - 20 * 3600, now, "auto", hist, "sessions", 24, 0.0, 0.7, true)
+        println("profile: ${sess.length()} sessions, shift=${pinfo.opt("shift")}")
+        assertTrue(sess.length() >= 1)
+        val a = now - 30 * 60
+        val cb = hist.get("BTCUSD", "M5", 20, now * 1000).let { b -> (0 until b.size).filter { b.t[it] >= a }.map { doubleArrayOf(b.t[it].toDouble(), b.h[it], b.l[it]) } }
+        flow.footprint("BTCUSD", "M5", a, now, "auto", hist, 0.0, cb, true)     // starts loading real trades
+        Thread.sleep(8_000)
+        val (cands, finfo) = flow.footprint("BTCUSD", "M5", a, now, "auto", hist, 0.0, cb, true)
+        println("footprint: ${cands.length()} candles, est=${finfo.getInt("est_candles")}, pending=${finfo.getBoolean("pending")}, row_size=${finfo.getDouble("row_size")}")
+        assertTrue(cands.length() >= 3)
+    }
 }
