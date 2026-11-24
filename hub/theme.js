@@ -1,5 +1,7 @@
 // Madar Chart theme: presets + the user's own overrides (Settings panel), shared by the wrapper and all engines.
 // Saved in localStorage "chartHubTheme" (same origin, so every engine iframe reads the same settings).
+// Running inside the Android app (Capacitor serves the UI from https://localhost; the Mac server is http://localhost:8770).
+window.MadarAndroid = location.protocol === "https:" && location.hostname === "localhost";
 window.HubPresets = {
   graphite: { label: "Graphite & amber", mode: "dark",   // chosen 2026-11-02 (_design/concepts/A_graphite_amber_1.jpg)
     bg: "#151412", panel: "#1b1a17", raised: "#24221e", line: "#2f2c27", grid: "#1f1d1a",

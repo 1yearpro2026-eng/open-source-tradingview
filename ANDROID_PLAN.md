@@ -79,7 +79,7 @@ H4/D1 and ~2 months of M5/M15, ~1 month of M1), Bybit 1000 per request, Binance 
 ## Batches (each ends with an APK the user can install)
 Status legend: [ ] todo, [x] done. Effort is a rough guess, not a promise.
 
-### Batch 0 — Skeleton and first APK (BUILT 2026-11-24; waiting for the user's tablet test)
+### Batch 0 — Skeleton and first APK (DONE; confirmed on the Honor Pad 10 by the user)
 - [x] Create `android-app/` (Capacitor 8 project, appId `com.alwaeli.madarchart`, name مدار چارت, minSdk 26, target 36), Gradle/AGP versions as in مدار.
 - [x] New keystore `madarchart.keystore` (pinned), launcher icon (simple chart mark, generated), landscape, immersive full screen, keep-screen-on option, splash.
 - [x] Web assets: copy `hub/` UI files into the app (`scripts/build_android.sh` syncs them; excludes Python files, logs, caches).
@@ -88,7 +88,7 @@ Status legend: [ ] todo, [x] done. Effort is a rough guess, not a promise.
 - Done when: APK installs on the Honor Pad, opens fullscreen, shows the chart with sample data, pinch/pan work, replay bar opens.
 - User tests: install, open, pan/zoom the chart, open Replay, open Settings; report lag, cut-off edges (camera hole / gesture bar), wrong sizes. Also report the "Android System WebView" version (Settings > Apps).
 
-### Batch 1 — Data pack and native reader (BUILT 2026-11-24; waiting for the user's tablet test)
+### Batch 1 — Data pack and native reader (DONE; confirmed on the Honor Pad 10 by the user)
 - [x] `tools/build_pack.py` + format spec above; first pack: EURUSD (Oct 2026 file) + Deriv gold from the Mac store.
 - [x] Kotlin `PackStore` (read chunks, range queries by time, merge with `user.db`), first-run copy with progress, pack version check.
 - [x] Kotlin endpoints: `/api/bars`, `/api/symbols`, `/api/instruments`, `/api/status` with the same JSON as the Python server (golden tests: same request -> same bytes of data).
@@ -96,13 +96,15 @@ Status legend: [ ] todo, [x] done. Effort is a rough guess, not a promise.
 - Done when: chart, replay, motion, bookmarks, themes, layouts all work on the tablet offline with bundled data, and tests pass.
 - User tests: airplane mode on; EURUSD and gold open; replay with motion; bookmarks survive closing the app; app start time.
 
-### Batch 2 — Touch and tablet UX
-- [ ] Scissors (cut) mode by tap/drag with a magnifier line; on-screen buttons for nudge (◀ ▶) instead of arrow keys; Back/Step/Play/Move buttons at least 44 px.
-- [ ] Replay bar and bookmarks panel redesigned for fingers (bottom or side dock option); no hover-only behaviour anywhere.
-- [ ] Local fonts (no Google Fonts), soft keyboard handling for inputs, Android back button (close panels, then exit), rotation lock to landscape (allow reverse landscape).
+### Batch 2 — Touch and tablet UX (BUILT 2026-11-24; waiting for the user's tablet test)
+- [x] Scissors (cut) mode by tap/drag with a magnifier line; on-screen buttons for nudge (◀ ▶) instead of arrow keys; Back/Step/Play/Move buttons at least 44 px.
+- [x] Replay bar and bookmarks panel redesigned for fingers (bottom or side dock option); no hover-only behaviour anywhere.
+- [x] Local fonts (no Google Fonts), soft keyboard handling for inputs, Android back button (close panels, then exit), rotation lock to landscape (allow reverse landscape).
 - [ ] Crosshair on long-press; drawing tools by touch; layouts (1, 2, 3, 2 stacked, 4) with touch-friendly dividers; check Vela's mobile/tablet layout threshold.
 - [ ] Safe areas: respect camera cut-out and gesture bar like مدار (`viewport-fit=cover`, insets).
 - Done when: everything in the replay/bookmark/theme flow is usable with fingers only, no keyboard or mouse.
+- Built in this batch: touch scissors (touch/drag places the band, no tap-to-cut; toolbar ◀ ▶ "Cut here" ✕), `@media (pointer: coarse)` sizes for the replay bar, bookmarks, top bar, rail, panels; page-wide `user-select:none` (except inputs); Android back button (`window.madarBack` in the shell and in `replay_bar.js`, called from `MainActivity.kt`; closes scissors, bookmarks, indicators dialog, side panel, search list, then lets the app go back); only the system font is offered in the app (Google Fonts are not offline); Settings shows "This screen: WxH px, pixel ratio" in the app so sizes can be tuned from the user's numbers.
+- NOT changed on purpose: no `<meta viewport>` (the user approved how the UI looks on the tablet in Batches 0/1; adding one could shrink everything). Not verified yet: Vela's own touch gestures (long-press crosshair, drawing by finger, dividers of 2/3/4 charts), soft-keyboard behaviour, rotation.
 
 ### Batch 3 — Live feeds and data modes
 - [ ] Kotlin Deriv (WebSocket + `ticks_history` paging rules), Bybit (REST + WS), Binance (REST + WS) with OkHttp; symbol lists cached to disk and loaded at start offline.
@@ -145,6 +147,7 @@ verify gold against a live feed after the first import. Files without a weekend 
 7. Mac disk space for Gradle builds (89 GB free at planning time).
 
 ## Progress log
+- 2026-11-24 (Batch 2 built): user confirmed Batches 0 and 1 work on the Honor Pad 10 ("كلشي تمام"). Touch scissors, touch sizes, back button, no text selection, fonts, diagnostics line (see Batch 2 notes). Tested in the desktop browser with synthetic touch pointer events (tap does not cut; ◀ ▶ nudge candle by candle; "Cut here" starts the replay at the nudged candle; back closes scissors, bookmarks panel, dock and returns false when nothing is open) and the Gradle build + unit tests pass. NOT run on a device.
 - 2026-11-24 (Batch 1 built): `tools/build_pack.py` builds `android-app/android/app/src/main/assets/madar_pack.db` from the Mac store (now: Deriv gold all 7 timeframes + imported EURUSD Oct 2026; 14 series, 192,771 bars, 1 MB) and `src/test/resources/pack_golden.json` (numbers computed from the parquet files with separate code). Every chunk is round-trip checked in Python. Kotlin: `Codec.kt` (zlib + zigzag varints), `PackStore.kt` (+ `PackDb` interface), `AndroidPackDb.kt`, `PackInstaller.kt` (copies the pack from assets to private storage at first run and after each APK update), `ApiHandler.kt` now answers /api/bars, symbols, instruments, status, offline/status from the pack (symbols and instruments JSON are precomputed by the builder with the real `server.instrument_key`). Tests: `PackTest` (6) against the real pack through JDBC: all 14 series match the golden count/first/last/sum of closes/volumes, `to`+`limit` queries, chunk edges, formatting, lists, error codes. Measured size: EURUSD M1 2.26 bytes/bar, gold M1 4.2 bytes/bar (2-decimal prices move more ticks) -> about 15 MB (EURUSD) and 27 MB (gold) for 16 years of M1, plus about 20% for the other timeframes. Not yet run on a device. TODO later: a progress screen while a large pack is copied (Batch 6); pack builder should read HistData folders directly (Batch 5) - for now import them on the Mac first.
 - 2026-11-24 (Batch 0 built): `android-app/` created (Capacitor 8.6, Gradle 8.14.3, AGP 8.13, Kotlin 2.1.21, minSdk 26, target 36). Files: `ApiHandler.kt` (pure Kotlin /api twin, serves the bundled EURUSD sample from `assets/sample`), `ApiWebViewClient.kt` (intercepts /api/* via Capacitor's `bridge.setWebViewClient`), `MainActivity.kt` (immersive landscape), unit tests `ApiHandlerTest` (5 pass). Web tweaks: `lab.js` sets `window.MadarAndroid` (https://localhost) and skips the WebSocket there, safe default symbol; `hub.html` falls back to the first instrument. Scripts: `scripts/sync_web.sh`, `scripts/build_android.sh [test]`, `scripts/export_sample_android.py`. APK: `~/Desktop/MadarChart.apk` (5.3 MB, signed with the new key, id `com.alwaeli.madarchart`). Verified: Gradle build OK, 5 unit tests OK, apksigner/aapt2 checks, and the web UI in the desktop browser against a stand-in server returning the same /api JSON (chart + replay bar load, no console errors). NOT yet run on any Android device. Keystore backup: `~/Documents/MadarChart-keystore-backup/`.
 - 2026-11-24: plan written; decisions confirmed by the user (Honor Pad 10, install-and-test himself, EURUSD + gold first, id `com.alwaeli.madarchart`, no Firebase). Python app fully committed (git `1.3`). Nothing built for Android yet. Next: Batch 0.

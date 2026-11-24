@@ -1,6 +1,7 @@
 package com.alwaeli.madarchart
 
 import android.os.Bundle
+import androidx.activity.OnBackPressedCallback
 import androidx.core.view.WindowCompat
 import androidx.core.view.WindowInsetsCompat
 import androidx.core.view.WindowInsetsControllerCompat
@@ -15,6 +16,22 @@ class MainActivity : BridgeActivity() {
         val api = ApiHandler(store)
         bridge.setWebViewClient(ApiWebViewClient(bridge, api))
         hideSystemBars()
+        // Back button: the page closes its innermost open thing (scissors, panel, dialog); when there is nothing, the app goes back as usual.
+        backCallback = object : OnBackPressedCallback(true) {
+            override fun handleOnBackPressed() {
+                bridge.webView.evaluateJavascript("(function(){try{return !!(window.madarBack&&window.madarBack())}catch(e){return false}})()") { r ->
+                    if (r != "true") { isEnabled = false; onBackPressedDispatcher.onBackPressed() }
+                }
+            }
+        }
+        onBackPressedDispatcher.addCallback(this, backCallback!!)
+    }
+
+    private var backCallback: OnBackPressedCallback? = null
+
+    override fun onResume() {
+        super.onResume()
+        backCallback?.isEnabled = true
     }
 
     override fun onWindowFocusChanged(hasFocus: Boolean) {

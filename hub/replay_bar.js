@@ -29,7 +29,22 @@
   .mc-bm-meta{color:var(--faint,#93a2af);font-size:11px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
   .mc-bm-row button{height:22px;padding:0 5px}
   .mc-bm-msg{color:var(--faint,#93a2af);font-size:11px;min-height:14px;margin-top:4px}
-  .mc-bm-empty{color:var(--faint,#93a2af);padding:6px}`;
+  .mc-bm-empty{color:var(--faint,#93a2af);padding:6px}
+  .mc-touch{position:absolute;z-index:31;left:50%;bottom:64px;transform:translateX(-50%);display:flex;align-items:center;gap:6px;padding:6px;border-radius:10px;
+    background:var(--panel,#16212b);border:1px solid var(--line,#2b3946);box-shadow:0 6px 20px rgba(0,0,0,.4);font:14px system-ui,sans-serif;color:var(--text,#d6dee5);touch-action:manipulation}
+  .mc-touch button{height:46px;min-width:56px;border:1px solid var(--line,#2b3946);border-radius:8px;background:var(--raised,#1d2a36);color:inherit;font:inherit;font-size:20px;padding:0 14px}
+  .mc-touch button.go{background:var(--accent,#e3a33a);color:var(--accentInk,#1a1407);font-size:15px;font-weight:700}
+  .mc-touch .hint{max-width:220px;font-size:12px;color:var(--faint,#93a2af);padding:0 4px}
+  @media (pointer: coarse) {
+    .mc-rp{gap:6px;padding:5px}
+    .mc-rp button,.mc-rp select,.mc-rp input{height:38px;font-size:13px;padding:0 11px}
+    .mc-rp input[type=range]{height:38px;padding:0}
+    .mc-rp .mc-rp-info{font-size:12px}
+    .mc-bm{width:380px}
+    .mc-bm-row{padding:9px 8px}
+    .mc-bm-row button{height:36px;min-width:40px}
+    .mc-bm-name{font-size:14px}.mc-bm-meta{font-size:12px}
+  }`;
   document.head.appendChild(css);
 
   const PRESETS = [["1 hour ago", 3600e3], ["3 hours ago", 3 * 3600e3], ["6 hours ago", 6 * 3600e3], ["1 day ago", 864e5],
@@ -162,8 +177,23 @@
       }
     };
     document.addEventListener("keydown", cutKey, true);
-    cutLayer.onmousemove = (ev) => { pick(ev); show(); };
-    cutLayer.onclick = (ev) => { pick(ev); commit(); };
+    // Mouse: the band follows the pointer, a click cuts. Finger: touch or drag to place the band, then nudge with the buttons and
+    // confirm (a tap alone never cuts, because a fingertip is too wide to be exact).
+    let ptype = (window.matchMedia && matchMedia("(pointer: coarse)").matches) ? "touch" : "mouse";
+    const nudge = (d) => { if (sel === null) return; const n = sel + d; if (valid(n)) { sel = n; show(); } };
+    const mk = (txt, cls, fn) => { const b = el("button", { textContent: txt, className: cls || "" }); b.onclick = (e) => { e.stopPropagation(); fn(); }; return b; };
+    const tb = el("div", { className: "mc-touch" }, [mk("◀", "", () => nudge(-1)), mk("▶", "", () => nudge(1)), mk("✂ Cut here", "go", commit), mk("✕", "", endCut),
+      el("span", { className: "hint", textContent: "Touch or drag on the chart to place the candle, then press ◀ ▶ to fine-tune." })]);
+    tb.hidden = ptype !== "touch";
+    tb.onpointerdown = (e) => e.stopPropagation();
+    cutLayer.append(tb);
+    cutLayer.style.touchAction = "none";
+    cutLayer.onpointerdown = (ev) => {
+      ptype = ev.pointerType || "mouse"; tb.hidden = ptype !== "touch";
+      if (ptype === "touch") { try { cutLayer.setPointerCapture(ev.pointerId); } catch (_) {} pick(ev); show(); }
+    };
+    cutLayer.onpointermove = (ev) => { if (ev.pointerType === "touch" ? ev.buttons : true) { pick(ev); show(); } };
+    cutLayer.onclick = (ev) => { if (ptype === "touch") return; pick(ev); commit(); };
   }
 
   // Step one bar back: restart the replay from the previous loaded bar (the engine can only step forward).
@@ -333,7 +363,7 @@
     u.bm.onclick = () => { u.panel.hidden = !u.panel.hidden; if (!u.panel.hidden) { bmSay(""); bmRender(); } };
     u.bmSave.onclick = bmSave;
     u.bmName.onkeydown = (e) => { e.stopPropagation(); if (e.key === "Enter") bmSave(); };
-    document.addEventListener("mousedown", (e) => { if (!u.panel.hidden && !bar.contains(e.target)) u.panel.hidden = true; });
+    document.addEventListener("pointerdown", (e) => { if (!u.panel.hidden && !bar.contains(e.target)) u.panel.hidden = true; });
     u.start.onclick = startReplay;
     u.step.onclick = step;
     u.move.onclick = () => { const c = chart(); if (c && c.replay.state.active) { c.replay.pause(); applyMotion(); c.replay.stepUpdate(); refresh(); } };
@@ -359,5 +389,11 @@
     refresh();
   }
 
+  // Android back button: close the innermost thing that is open. Returns true when it did something.
+  window.madarBack = () => {
+    if (cutLayer) { endCut(); return true; }
+    if (bar && !bar.ui.panel.hidden) { bar.ui.panel.hidden = true; return true; }
+    return false;
+  };
   window.MadarReplayBar = { mount };
 })();
