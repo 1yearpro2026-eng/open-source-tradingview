@@ -117,10 +117,12 @@ Status legend: [ ] todo, [x] done. Effort is a rough guess, not a promise.
 - [x] Port `orderflow_api.py` (delta, footprint, profile, value area, estimated rows) and `orderflow_trades.py` (Binance aggregate trades, weights/rate limits, cache) to Kotlin; golden tests against Python output on saved trades.
 - Done when: Footprint, session volume profile, TPO and delta draw the same as on the Mac for the same data.
 
-### Batch 5 — Import on device and the "new version" command
-- [ ] On device: file picker for CSV/zip (HistData, MetaTrader), streaming parse (no big memory), timezone auto-calibration from the weekly open, derive all timeframes, write to `user.db`.
-- [ ] Mac: `tools/new_version.sh` (or a button in the Local data panel): refresh feeds' recent bars, rebuild pack, build the APK, copy to Desktop, `adb install -r` if a device is connected.
-- [ ] Optional later: pull a delta pack from the Mac over Wi-Fi (no reinstall).
+### Batch 5 — Data goes INTO the app + the "new version" command (REVISED 2026-11-24 by the user's idea)
+The user will drop the HistData files in a folder on the Mac; the pack builder reads them and the data ships inside the APK. No file picker / on-device import (removed from the plan; can come later if ever wanted).
+- [ ] `tools/import_histdata.py` (or `build_pack.py --histdata <folder>`): read every `.csv` / `.zip` in a folder tree (HistData Generic ASCII M1, also MetaTrader CSV), symbol from the file name, timezone auto-calibration from the weekly open (same code as `hub/offline_store.py`), derive M5..D1, merge with existing data, report range/gaps per symbol, and check gold against a live feed.
+- [ ] `tools/new_version.sh`: optional refresh of recent candles from the feeds (Deriv/Bybit/Binance) for the packed symbols, rebuild the pack, build the APK, copy to Desktop, `adb install -r` if a tablet is connected.
+- [ ] Pack size check with real data (about 15 MB per pair for 16 years of M1, gold about 27 MB, +20% for the other timeframes); first-run copy progress screen if the pack is large (moved here from Batch 6).
+- Done when: EURUSD + XAUUSD from 2010 are inside the APK and open offline on the tablet.
 
 ### Batch 6 — Hardening and final
 - [ ] Performance with the full data set (10 assets x 16 years): chart open time, scroll at 60 fps, memory, battery, start-up under 2 s.
