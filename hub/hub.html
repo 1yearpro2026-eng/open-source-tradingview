@@ -151,6 +151,7 @@
   <span id="brand">Madar Chart</span><span class="sep"></span>
   <div id="pick"><input id="q" spellcheck="false" autocomplete="off" placeholder="Search instrument"><div id="list" hidden></div></div>
   <div class="seg" id="modeSeg" hidden title="Live = internet feeds only. Local = data stored on this tablet only."><button data-m="0">Live</button><button data-m="1">Local</button></div>
+  <div class="seg"><button id="freeBtn" title="Free chart: drag the chart in any direction, the price scale stops following the candles. Tap again to go back to automatic.">✥ Free</button></div>
   <div class="seg"><button id="replayBtn" title="Bar Replay: tap, then choose the candle to start from with the scissors">⏪ Replay</button></div>
   <span class="sep"></span>
   <div class="seg" id="brokers" title="Broker: same instrument, different price source"></div>
@@ -187,6 +188,8 @@ const inst = (k) => DATA.instruments.find((i) => i.key === k);
 
 // The instrument list and the broker buttons. In the app the list depends on the mode (Live: feeds only; Local: stored data only),
 // so it is read again whenever the mode changes.
+let freeOn = (() => { try { return localStorage.getItem("madarFree") === "1"; } catch (_) { return false; } })();
+function sendFree() { const w = $("frame").contentWindow; if (w) w.postMessage({ cmd: "free", on: freeOn }, location.origin); }
 async function loadLists() {
   DATA = await (await fetch("/api/instruments")).json();
   BY_TICKER.clear();
@@ -207,6 +210,8 @@ async function init() {
   TFS.forEach(([id, n]) => $("tfs").appendChild(btn(n, () => { st.tf = id; push(); }, id)));
   $("restart").onclick = restartChart;
   $("modeSeg").querySelectorAll("button").forEach((b) => { b.onclick = () => { if (!(offData && !!offData.local === (b.dataset.m === "1"))) setMode(b.dataset.m === "1"); }; });
+  $("freeBtn").onclick = () => { freeOn = !freeOn; try { localStorage.setItem("madarFree", freeOn ? "1" : "0"); } catch (_) {} $("freeBtn").classList.toggle("on", freeOn); sendFree(); };
+  $("freeBtn").classList.toggle("on", freeOn);
   $("replayBtn").onclick = () => { const w = $("frame").contentWindow; if (w) w.postMessage({ cmd: "replay" }, location.origin); };
   $("modeBadge").onclick = () => { if (window.MadarAndroid) setMode(!(offData && offData.local)); };
   pollStatus(); setInterval(pollStatus, 10000);
@@ -318,6 +323,7 @@ window.addEventListener("message", (e) => {
     if (e.data.symbol !== pending) return;
     if (e.data.error) { $("coverText").textContent = `${pending}: ${e.data.error}. Trying again by itself; or press Restart chart below.`; retryLoad(); return; }
     pending = null; clearTimeout(coverTimer); clearTimeout(coverRetry); $("cover").hidden = true;
+    if (freeOn) setTimeout(sendFree, 1500);                  // a fresh chart: put Free chart back
     if (reapply) { reapply = false; reapplyAll(); for (const k in CAT) if (k.startsWith("vela:")) delete CAT[k]; indChanged(); }  // a fresh engine: put the saved indicators back
     return;
   }

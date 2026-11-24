@@ -120,6 +120,7 @@ window.LabNotify = (symbol, tf) => { if (LabEmbedded) window.parent.postMessage(
 window.addEventListener("message", (e) => {
   if (e.origin !== location.origin || !e.data || !window.labChart) return;
   if (e.data.cmd === "set" && labChart.setMarket) labChart.setMarket(e.data.symbol, e.data.tf);
+  if (e.data.cmd === "free" && labChart.setFree) labChart.setFree(!!e.data.on);
   if (e.data.cmd === "replay" && window.MadarReplayBar) MadarReplayBar.toggle();
   if (e.data.cmd === "layout" && labChart.setLayout) labChart.setLayout(e.data.layout);
   if (e.data.cmd === "pine:add") {

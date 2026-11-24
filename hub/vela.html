@@ -249,12 +249,52 @@ window.labChart = {
         }
       }
     } catch (e) { console.warn("keep position", e); }
-    return ws.chart.setMarket(req);
+    const done = ws.chart.setMarket(req);
+    if (window.__freeOn) {                                   // Free chart: the old price range does not fit the new candles; start from auto, then free again
+      const rp = () => (ws.active || ws).chart.renderer;
+      try { rp().set("autoScale", true); } catch (_) {}
+      setTimeout(() => { try { if (window.__freeOn) rp().set("autoScale", false); } catch (_) {} }, 2500);
+    }
+    return done;
   },
+  // Free chart: the price scale stops following the candles, so a drag moves the chart up/down as well as sideways.
+  setFree: (on) => { window.__freeOn = !!on; try { (ws.active || ws).chart.renderer.set("autoScale", !on); } catch (e) { console.warn("free chart", e); } },
   setTF: (t) => ws.chart.setTimeframe ? ws.chart.setTimeframe({ M1: "1", M5: "5", M15: "15", M30: "30", H1: "60", H4: "240", D1: "1D" }[t]) : null,
   addCodeTrendline,
   drawingCount: () => { try { return ws.chart.drawings.list().length; } catch (_) { return -1; } },
   barCount: () => lastBars.length,
 };
+
+// ---- Older history on demand (2026-11-24). Vela loads a fixed depth (10,000 candles) and then stops: on a 1-hour chart that ended
+// in 2025 and on 5 minutes in a few weeks. While you look at the left end of the loaded candles this asks Vela to extend its depth
+// (setMarket({bars})), which loads the next block from the feed / the pack and keeps your view. It stops when the data runs out.
+(function () {
+  const STEP = 30000, CAP = 1500000;
+  let busy = false, key = "", done = {};
+  setInterval(async () => {
+    if (busy || typeof ws === "undefined" || !ws) return;
+    try {
+      const tf = window.LabDefaultTF, sym = window.LabDefaultSymbol, k = sym + "|" + tf;
+      if (k !== key) { key = k; }
+      if (done[k] || !LabTF.sec[tf]) return;
+      const ch = (ws.active || ws).chart, rp = ch.rendererPort, co = rp && rp.coords;
+      if (!co || !co.barCount || co.barCount >= CAP) return;
+      const vr = rp.getVisibleRange(); if (!vr) return;
+      const first = co.logicalToTime(0), step = LabTF.sec[tf] * 1000;
+      if (vr.from - first > 600 * step) return;                 // not near the left end yet
+      busy = true;
+      const before = co.barCount;
+      await ch.setMarket({ bars: before + STEP });
+      let stable = 0, last = before;
+      for (let i = 0; i < 100 && stable < 5; i++) {              // up to 30 s: wait until the block has arrived
+        await new Promise((r) => setTimeout(r, 300));
+        const n = co.barCount; stable = n === last ? stable + 1 : 0; last = n;
+        if (n >= before + STEP) break;
+      }
+      if (co.barCount - before < 50) done[k] = true;              // nothing older exists
+    } catch (e) { console.warn("older history", e); }
+    busy = false;
+  }, 700);
+})();
 </script>
 </body></html>

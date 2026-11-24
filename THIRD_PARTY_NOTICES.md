@@ -26,3 +26,6 @@ cd build
 npm ci
 npm run build     # -> ../hub/vela.bundle.js
 ```
+
+
+Local patch in `hub/vela.bundle.js` (2026-11-24): on touch screens the long-press crosshair now stays after the finger is lifted (`sticky` in the pointer handler: drag moves it, a tap hides it). Everything else in the bundle is unchanged; re-apply this patch when the bundle is rebuilt.
