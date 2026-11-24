@@ -10,9 +10,9 @@ class MainActivity : BridgeActivity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
-        val api = ApiHandler { name ->
-            try { assets.open("sample/$name").bufferedReader().use { it.readText() } } catch (e: Exception) { null }
-        }
+        // The data pack (inside the APK) is copied to private storage on first run / after an update, then opened read-only.
+        val store = try { PackStore(AndroidPackDb(PackInstaller.ensure(this).path)) } catch (e: Exception) { android.util.Log.e("Madar", "pack", e); null }
+        val api = ApiHandler(store)
         bridge.setWebViewClient(ApiWebViewClient(bridge, api))
         hideSystemBars()
     }
