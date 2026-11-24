@@ -52,7 +52,9 @@
     #app { grid-template-rows:48px 1fr 24px; grid-template-columns:1fr auto 54px }
     #bar { gap:10px }
     .seg button { padding:10px 13px; font-size:14px }
-    #q { padding:9px 10px 9px 28px; font-size:14px; width:260px }
+    #q { padding:9px 10px 9px 28px; font-size:14px; width:200px }
+    #brand, #ticker { display:none }               /* the bar must fit a 1280 px tablet: Replay and the layout box stay on screen */
+    #brand + .sep { display:none }
     select { padding:8px 8px; font-size:14px }
     #list { top:46px } #list div { padding:11px 12px }
     #rail { gap:8px; padding-top:8px } #rail button { width:44px; height:44px }
@@ -148,13 +150,15 @@
 <div id="bar">
   <span id="brand">Madar Chart</span><span class="sep"></span>
   <div id="pick"><input id="q" spellcheck="false" autocomplete="off" placeholder="Search instrument"><div id="list" hidden></div></div>
+  <div class="seg" id="modeSeg" hidden title="Live = internet feeds only. Local = data stored on this tablet only."><button data-m="0">Live</button><button data-m="1">Local</button></div>
+  <div class="seg"><button id="replayBtn" title="Bar Replay: tap, then choose the candle to start from with the scissors">⏪ Replay</button></div>
+  <span class="sep"></span>
   <div class="seg" id="brokers" title="Broker: same instrument, different price source"></div>
   <select id="variant" title="Market type at this broker" hidden></select>
   <span id="ticker"></span><span class="sep"></span>
   <div class="seg" id="tfs"></div><span class="sep"></span>
   <select id="layout" title="Chart layout (Vela)"><option value="">1 chart</option><option value="2h">2 side by side</option><option value="3h">3 side by side</option><option value="2v">2 stacked</option><option value="4">4 charts</option></select>
   <span class="sep"></span>
-  <div class="seg"><button id="replayBtn" title="Bar Replay: tap, then choose the candle to start from with the scissors">⏪ Replay</button></div>
 </div>
 <div id="stage"><iframe id="frame" title="chart"></iframe><div id="cover" hidden><div id="coverText"></div></div></div>
 <aside id="dock" hidden></aside>
@@ -202,6 +206,7 @@ async function init() {
   await loadLists();
   TFS.forEach(([id, n]) => $("tfs").appendChild(btn(n, () => { st.tf = id; push(); }, id)));
   $("restart").onclick = restartChart;
+  $("modeSeg").querySelectorAll("button").forEach((b) => { b.onclick = () => { if (!(offData && !!offData.local === (b.dataset.m === "1"))) setMode(b.dataset.m === "1"); }; });
   $("replayBtn").onclick = () => { const w = $("frame").contentWindow; if (w) w.postMessage({ cmd: "replay" }, location.origin); };
   $("modeBadge").onclick = () => { if (window.MadarAndroid) setMode(!(offData && offData.local)); };
   pollStatus(); setInterval(pollStatus, 10000);
@@ -361,7 +366,10 @@ async function offPost(path, body) {
 async function offPoll() {
   let n; try { n = await (await fetch("/api/offline/status")).json(); } catch (_) { return; }
   const sig = JSON.stringify(n), changed = sig !== offSig; offSig = sig; offData = n;
-  if (window.MadarAndroid) { $("modeBadge").hidden = false; $("modeBadge").textContent = n.local ? "LOCAL" : "LIVE"; $("modeBadge").style.cssText += ";cursor:pointer;padding:6px 14px;border:1px solid var(--accent);border-radius:6px"; $("modeBadge").title = "Tap to switch between Live (internet feeds only) and Local (data stored on this tablet only)"; }
+  if (window.MadarAndroid) {
+    $("modeSeg").hidden = false;
+    $("modeSeg").querySelectorAll("button").forEach((b) => b.classList.toggle("on", (b.dataset.m === "1") === !!n.local));
+    $("modeBadge").hidden = false; $("modeBadge").textContent = n.local ? "LOCAL" : "LIVE"; $("modeBadge").style.cssText += ";cursor:pointer;padding:6px 14px;border:1px solid var(--accent);border-radius:6px"; $("modeBadge").title = "Tap to switch between Live (internet feeds only) and Local (data stored on this tablet only)"; }
   else $("modeBadge").hidden = !n.local;
   if (openPanel === "offline" && changed) renderOffline();
 }
