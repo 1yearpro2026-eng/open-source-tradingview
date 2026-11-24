@@ -26,13 +26,16 @@ class MainActivity : BridgeActivity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        AppLog.init(filesDir)
+        val previous = Thread.getDefaultUncaughtExceptionHandler()
+        Thread.setDefaultUncaughtExceptionHandler { th, ex -> AppLog.e("crash", "uncaught in ${th.name}", ex); previous?.uncaughtException(th, ex) }
         // The data pack (inside the APK) is copied to private storage on first run / after an update, then opened read-only.
         // A big pack takes a few seconds: a progress screen covers the app until the copy is done, then the page reloads.
         if (PackInstaller.needsCopy(this)) {
             val ui = ProgressScreen(this)
             ui.attach(this)
             Thread({
-                val ok = try { PackInstaller.install(this) { d, t -> ui.update(d, t) }; true } catch (e: Exception) { android.util.Log.e("Madar", "pack copy", e); false }
+                val ok = try { PackInstaller.install(this) { d, t -> ui.update(d, t) }; true } catch (e: Exception) { android.util.Log.e("Madar", "pack copy", e); AppLog.e("pack", "copy failed", e); false }
                 runOnUiThread {
                     setupBackend()
                     ui.remove()
@@ -56,7 +59,7 @@ class MainActivity : BridgeActivity() {
     }
 
     private fun setupBackend() {
-        val pack = try { PackStore(AndroidPackDb(PackInstaller.target(this).path)) } catch (e: Exception) { android.util.Log.e("Madar", "pack", e); null }
+        val pack = try { PackStore(AndroidPackDb(PackInstaller.target(this).path)) } catch (e: Exception) { android.util.Log.e("Madar", "pack", e); AppLog.e("pack", "open failed", e); null }
         val prefs = getSharedPreferences("madar", MODE_PRIVATE)
         val settings = object : Settings {
             override var localMode: Boolean

@@ -19,9 +19,7 @@ class ApiHandler(private val service: BarService?, private val book: SymbolBook?
     fun handle(method: String, path: String, q: Map<String, String>): Reply {
         if (method != "GET") return err("not available in this build yet", 501)
         if (path == "/api/health") return json("{}")
-        if (path.startsWith("/api/logs")) {
-            return json("""{"boot":0,"last":0,"now":${System.currentTimeMillis()},"errors_15m":0,"latest_error":null,"problems":{},"sources":{},"lines":[],"journal_raw":false}""")
-        }
+        if (path.startsWith("/api/logs")) return json(AppLog.json(q["since"]?.toLongOrNull() ?: 0L, q["brief"] == "1"))
         val svc = service ?: return err("the data pack is not installed", 503)
         val bk = book ?: return err("the data pack is not installed", 503)
         return try {
@@ -43,6 +41,7 @@ class ApiHandler(private val service: BarService?, private val book: SymbolBook?
                 else -> err("not found", 404)
             }
         } catch (e: Exception) {
+            AppLog.w("api", "$path ${q["symbol"] ?: ""} ${q["tf"] ?: ""}: ${e.javaClass.simpleName}: ${e.message}")
             err("${e.javaClass.simpleName}: ${e.message}", 502)
         }
     }

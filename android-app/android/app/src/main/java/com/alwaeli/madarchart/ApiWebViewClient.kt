@@ -22,6 +22,7 @@ class ApiWebViewClient(bridge: Bridge, private val api: ApiHandler) : BridgeWebV
         val reply = try {
             api.handle(request.method ?: "GET", path, query)
         } catch (e: Exception) {
+            AppLog.e("api", path, e)
             ApiHandler.Reply(500, ("""{"error":"${e.javaClass.simpleName}: ${(e.message ?: "").replace("\"", "'")}"}""").toByteArray())
         }
         val headers = hashMapOf("Cache-Control" to "no-store", "Access-Control-Allow-Origin" to "*")

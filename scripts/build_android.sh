@@ -2,6 +2,7 @@
 # Build the Madar Chart APK: web UI -> Capacitor sync -> Gradle -> ~/Desktop/MadarChart.apk
 #   sh scripts/build_android.sh          build
 #   sh scripts/build_android.sh test     run the Kotlin unit tests first
+#   sh scripts/build_android.sh debug    build the debug variant instead of the release one (release is the default)
 set -e
 cd "$(dirname "$0")/.."
 export JAVA_HOME="/opt/homebrew/opt/openjdk@21/libexec/openjdk.jdk/Contents/Home"
@@ -11,6 +12,9 @@ sh scripts/sync_web.sh
 (cd android-app && npx cap sync android)
 cd android-app/android
 if [ "$1" = "test" ]; then ./gradlew testDebugUnitTest; fi
-./gradlew assembleDebug
-cp app/build/outputs/apk/debug/app-debug.apk "$HOME/Desktop/MadarChart.apk"
+if [ "$1" = "debug" ] || [ "$2" = "debug" ]; then
+  ./gradlew assembleDebug; cp app/build/outputs/apk/debug/app-debug.apk "$HOME/Desktop/MadarChart.apk"
+else
+  ./gradlew assembleRelease; cp app/build/outputs/apk/release/app-release.apk "$HOME/Desktop/MadarChart.apk"
+fi
 echo "APK ready: $HOME/Desktop/MadarChart.apk ($(du -h "$HOME/Desktop/MadarChart.apk" | cut -f1))"

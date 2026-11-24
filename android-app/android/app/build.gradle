@@ -19,7 +19,7 @@ android {
         // Always higher than the build before it (minutes since 1970): a new APK installs OVER the old app and keeps its data.
         // NEVER uninstall the app first (that is the only thing that erases the data). Keep the keystore forever.
         versionCode ((System.currentTimeMillis().intdiv(60000L)) as int)
-        versionName "0.1-batch0"
+        versionName "1.0"
         testInstrumentationRunner "androidx.test.runner.AndroidJUnitRunner"
         aaptOptions {
              // Files and dirs to omit from the packaged assets dir, modified to accommodate modern web apps.
